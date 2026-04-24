@@ -1,61 +1,44 @@
 #!/usr/bin/env bash
 # Mission Control launcher for Linux / macOS / WSL / Git Bash.
 # Usage:  ./scripts/run-linux.sh
-#   - Installs claude-bridge npm deps on first run
-#   - Starts the Node bridge + Blazor web app together
-#   - Ctrl-C stops both cleanly
-# Requires: Node.js 20+, .NET 8 SDK. No environment variables needed — all
-# config lives in MissionControl.Web/appsettings.Local.json.
+#   - Starts opencode serve on port 4096
+#   - Starts zen-bridge on port 4100
+#   - Starts Blazor web app
+#   - Ctrl-C stops all cleanly
+# Requires: .NET 8 SDK, Bun (https://bun.sh).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BRIDGE_DIR="$ROOT/claude-bridge"
+ZEN_BRIDGE="$ROOT/zen-bridge"
 WEB_DIR="$ROOT/MissionControl.Web"
-LOCAL_CFG="$WEB_DIR/appsettings.Local.json"
-
-# --- Preflight ------------------------------------------------------------
 
 require() {
   command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' not on PATH. $2" >&2; exit 1; }
 }
-require node   "Install Node.js 20+ (https://nodejs.org)"
-require npm    "npm ships with Node.js."
+require bun    "Install Bun from https://bun.sh"
 require dotnet "Install the .NET 8 SDK (https://dotnet.microsoft.com/download)"
 
-if [[ ! -f "$LOCAL_CFG" ]]; then
-  echo ""
-  echo "First-time setup:"
-  echo "  $LOCAL_CFG is missing."
-  echo "  Copy appsettings.Local.json.example to appsettings.Local.json,"
-  echo "  then set Obsidian:VaultPath and Anthropic:ApiKey inside it."
-  echo ""
-  exit 1
-fi
+echo "==> Starting opencode serve on port 4096..."
+(bun x opencode-ai serve --port 4096) &
+OPENCODE_PID=$!
+echo "    opencode PID=$OPENCODE_PID"
 
-# --- Install bridge deps on first run -------------------------------------
+sleep 2
 
-if [[ ! -d "$BRIDGE_DIR/node_modules" ]]; then
-  echo "==> Installing claude-bridge npm dependencies (first run)..."
-  (cd "$BRIDGE_DIR" && npm install)
-fi
-
-# --- Start the bridge as a tracked background process ---------------------
-
-echo "==> Starting claude-bridge..."
-(cd "$BRIDGE_DIR" && node server.js) &
-BRIDGE_PID=$!
-echo "    claude-bridge PID=$BRIDGE_PID"
+echo "==> Starting zen-bridge on port 4100..."
+(cd "$ZEN_BRIDGE" && node server.js) &
+ZEN_PID=$!
+echo "    zen-bridge PID=$ZEN_PID"
 
 cleanup() {
   echo ""
-  echo "==> Shutting down claude-bridge..."
-  kill "$BRIDGE_PID" 2>/dev/null || true
+  echo "==> Shutting down services..."
+  kill "$OPENCODE_PID" "$ZEN_PID" 2>/dev/null || true
   wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
-# Give Express a moment to bind its port.
 sleep 1
 
 echo "==> Starting MissionControl.Web on http://localhost:5000"

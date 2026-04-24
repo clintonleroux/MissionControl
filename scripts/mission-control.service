@@ -9,7 +9,7 @@
 # No API key or vault path is exposed through the unit file.
 
 [Unit]
-Description=Mission Control (Blazor + Claude Agent bridge)
+Description=Mission Control (Blazor + Opencode Zen bridge)
 After=network.target
 
 [Service]

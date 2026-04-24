@@ -1,28 +1,53 @@
 # Mission Control
 
-Central dashboard to monitor, manage, and coordinate Claude Agent SDK runs, workflows, and tasks.
+Central dashboard to monitor, manage, and coordinate AI agent runs, workflows, and tasks across multiple providers.
 
 ## Architecture
 
 ```
-┌──────────────────────────────┐       ┌──────────────────────────┐
-│  MissionControl.Web (C#)     │  HTTP │  claude-bridge (Node.js) │
-│  Blazor Server + EF Core     │──────▶│  Claude Agent SDK        │
-│  SQLite persistence          │       │  POST /run, /runs/:id    │
-│  Owns ALL config (API key,   │       │  No env vars required    │
-│   vault path, bridge URL)    │       │                          │
-└──────────────┬───────────────┘       └────────────┬─────────────┘
-               │                                    │
-               │ reads & writes markdown            │ agent reads/writes
-               ▼                                    ▼
-        ┌──────────────────────────────────────────────────┐
-        │              Obsidian vault (filesystem)         │
-        │  - knowledge base (agents read)                  │
-        │  - run transcripts (agents & C# write)           │
-        └──────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                    MissionControl.Web (C#)                         │
+│                 Blazor Server + EF Core + SQLite                    │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │  Providers  │  │   Models    │  │    Tasks    │              │
+│  │ (Opencode,  │◄─┤ (per prov) │◄─┤ (assigns    │              │
+│  │  Claude)    │  │            │  │  model)     │              │
+│  └──────┬──────┘  └────────────┘  └─────────────┘              │
+│         │                                                      │
+│         │ HTTP                                                │
+└─────────┼──────────────────────────────────────────────────────┘
+          │                   
+          ▼                   
+┌────────────────────────────────────────────────────────────────────┐
+│                         Provider Bridges                            │
+│  ┌──────────────────┐  ┌──────────────────┐                      │
+│  │  zen-bridge      │  │  claude-bridge   │                      │
+│  │ (:4100, Opencode)│  │ (:4200, Claude)  │                      │
+│  └──────────────────┘  └──────────────────┘                      │
+│         ▲                     ▲                                   │
+│         │                     │                                   │
+└─────────┼─────────────────────┼───────────────────────────────────┘
+          │                     │                                   
+          ▼                     ▼                                   
+┌────────────────────────────────────────────────────────────────────┐
+│              Obsidian vault (filesystem)                         │
+│  - knowledge base (agents read)                              │
+│  - run transcripts (agents & C# write)                 │
+└────────────────────────────────────────────────────┘
 ```
 
-**Why the C#/Node split?** The Claude Agent SDK is JavaScript-only. A tiny Node.js sidecar exposes it over localhost HTTP so the C# Blazor app stays the single source of truth for UI, scheduling, persistence, and secrets. The bridge needs no config of its own — the C# app sends the API key on each `/run` call.
+**Why the C#/Node split?** AI agent SDKs are JavaScript-only. A tiny Node.js sidecar per provider exposes it over localhost HTTP so the C# Blazor app stays the single source of truth for UI, scheduling, persistence, and secrets.
+
+## Multi-Provider Support
+
+Mission Control supports multiple AI providers simultaneously:
+- **Opencode Zen** — uses `zen-bridge` on port 4100
+- **Claude** — uses `claude-bridge` on port 4200
+
+Each provider has:
+- API key stored in the database (per provider)
+- Base URL for the bridge
+- Multiple models with different capabilities
 
 ## Project layout
 
@@ -34,18 +59,26 @@ Mission Control/
 │   ├── appsettings.json                    # committed defaults
 │   ├── appsettings.Local.json              # gitignored, YOU create this
 │   ├── appsettings.Local.json.example      # template
-│   ├── Models/  Data/  Services/  Components/
+│   ├── Models/
+│   │   ├── Provider.cs                  # Provider entity
+│   │   ├── Model.cs                      # Model entity  
+│   │   ├── AgentTask.cs                  # Task entity (references Model)
+│   │   └── AgentRun.cs                   # Run entity
+│   ├── Data/  Services/  Components/
 │   └── wwwroot/app.css
-├── claude-bridge/
+├── zen-bridge/                          # Opencode Zen bridge
 │   ├── package.json
 │   ├── server.js
-│   └── config.json                         # bridge port only
-├── scripts/
-│   ├── run.ps1                             # Windows launcher (auto-installs deps)
-│   ├── run.cmd                             # double-click wrapper for run.ps1
-│   ├── run-linux.sh                        # Linux/macOS/WSL launcher (auto-installs deps)
-│   └── mission-control.service             # systemd unit for production hosting
-└── README.md
+│   └── config.json                     # bridge port only (:4100)
+├── claude-bridge/                       # Claude bridge
+│   ├── package.json
+│   ├── server.js
+│   └── config.json                     # bridge port only (:4200)
+└── scripts/
+    ├── run.ps1
+    ├── run.cmd
+    ├── run-linux.sh
+    └── mission-control.service
 ```
 
 ## Prerequisites
@@ -53,53 +86,50 @@ Mission Control/
 - **.NET 8 SDK** — https://dotnet.microsoft.com/download
 - **Node.js 20+** — https://nodejs.org
 - An **Obsidian vault** directory (any folder with markdown files)
-- An **Anthropic API key** — https://console.anthropic.com
 
 That's it. No environment variables to set.
 
 ## First-time setup
 
-Both launchers need one file before they'll start.
-
 1. Copy the example config:
    - **Windows:** `copy MissionControl.Web\appsettings.Local.json.example MissionControl.Web\appsettings.Local.json`
    - **Linux/macOS:** `cp MissionControl.Web/appsettings.Local.json.example MissionControl.Web/appsettings.Local.json`
 
-2. Open `MissionControl.Web/appsettings.Local.json` and fill in:
+2. Open `MissionControl.Web/appsettings.Local.json` and fill in your vault path:
    ```json
    {
-     "Obsidian": { "VaultPath": "C:\\path\\to\\your\\vault" },
-     "Anthropic": { "ApiKey": "sk-ant-..." }
+     "Obsidian": { "VaultPath": "C:\\path\\to\\your\\vault" }
    }
    ```
-   (Forward slashes work on Windows too, if you prefer.)
 
-`appsettings.Local.json` is gitignored — your secrets stay out of the repo.
+3. Start the app and configure providers in the **Providers** page:
+   - Add a provider (e.g., "Opencode" or "Claude")
+   - Set the API key for each provider
+   - Add models for each provider
+
+`appsettings.Local.json` is gitignored — your vault path stays out of the repo.
 
 ## Run
 
-The launcher scripts auto-install npm deps on first run and start both processes together. Ctrl-C stops both cleanly.
-
-**Windows:**
+**Start all bridges + web app:**
 ```powershell
 .\scripts\run.ps1
 ```
-Or double-click `scripts\run.cmd`.
 
-**Linux / macOS / WSL:**
+Or start bridges manually:
 ```bash
-./scripts/run-linux.sh
+cd zen-bridge && npm install && npm start &
+cd claude-bridge && npm install && npm start &
+cd MissionControl.Web && dotnet run
 ```
 
 Then open http://localhost:5000.
 
-## MVP end-to-end loop
+## Usage
 
-1. Create a task in the UI (e.g. "Summarize today's notes").
-2. Click **Run** — web posts to `claude-bridge` over HTTP, including your API key from config.
-3. Bridge invokes the Agent SDK with the Obsidian vault path as `cwd`, so the agent's Read/Write/Grep tools are scoped to the vault.
-4. Agent output streams back; C# persists the run + transcript to SQLite.
-5. Transcript is also written as a markdown note into the vault (`_MissionControl/runs/{timestamp}-run-{id}.md`).
+1. **Providers Page** — Add AI providers and their API keys
+2. **Tasks Page** — Create tasks and assign them to a model
+3. **Run** — Execute a task; the appropriate bridge is selected based on the model's provider
 
 ## Production hosting on Linux
 
@@ -107,17 +137,9 @@ Then open http://localhost:5000.
 sudo cp -r "Mission Control" /opt/mission-control
 sudo useradd --system --home /opt/mission-control missioncontrol
 sudo chown -R missioncontrol:missioncontrol /opt/mission-control
-# Create /opt/mission-control/MissionControl.Web/appsettings.Local.json with your vault + key
 sudo cp /opt/mission-control/scripts/mission-control.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now mission-control
 ```
 
-The systemd unit intentionally carries no secrets; everything lives in `appsettings.Local.json` on disk.
-
-## Extending
-
-- **More agents:** add rows to `AgentTask` with different `SystemPrompt` values.
-- **Scheduling:** add a `BackgroundService` in `MissionControl.Web` that polls for due tasks.
-- **Multi-step workflows:** add a `Workflow` model with ordered `AgentTask` steps.
-- **MCP / hooks / subagents:** the SDK auto-reads your `~/.claude/` directory, so anything you've already wired up for Claude Code is available to Mission Control's runs with no extra config.
+The systemd unit intentionally carries no secrets; configure providers in the database.

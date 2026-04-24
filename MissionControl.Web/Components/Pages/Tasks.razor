@@ -32,6 +32,16 @@
                 <InputTextArea @bind-Value="_new.SystemPrompt" class="input" rows="2" />
             </div>
             <div class="form-row">
+                <label>Model</label>
+                <InputSelect @bind-Value="_new.ModelId" class="input">
+                    <option value="">Use provider default</option>
+                    @foreach (var m in _models)
+                    {
+                        <option value="@m.Id">@(m.Provider?.Name ?? "?") / @m.Name</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="form-row">
                 <label>Allowed tools (comma-separated)</label>
                 <InputText @bind-Value="_new.AllowedTools" class="input" placeholder="Read,Write,Grep,Glob,Edit" />
             </div>
@@ -55,6 +65,7 @@ else
             <tr>
                 <th>#</th>
                 <th>Name</th>
+                <th>Model</th>
                 <th>Prompt</th>
                 <th>Tools</th>
                 <th>Turns</th>
@@ -67,6 +78,7 @@ else
                 <tr>
                     <td>@t.Id</td>
                     <td><strong>@t.Name</strong></td>
+                    <td>@(t.Model?.Provider?.Name ?? "?")/@(t.Model?.Name ?? "—")</td>
                     <td class="truncate">@t.Prompt</td>
                     <td>@(t.AllowedTools ?? "—")</td>
                     <td>@t.MaxTurns</td>
@@ -82,25 +94,52 @@ else
 
 @code {
     private List<AgentTask> _tasks = new();
+    private List<Model> _models = new();
     private bool _showCreate;
     private AgentTask _new = Blank();
 
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    private async Task ReloadAsync()
+    private async Task LoadAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        _tasks = await db.AgentTasks.OrderBy(t => t.Id).ToListAsync();
+        _tasks = await db.AgentTasks
+            .Include(t => t.Model).ThenInclude(m => m!.Provider)
+            .OrderBy(t => t.Id)
+            .ToListAsync();
+        _models = await db.Models
+            .Include(m => m.Provider)
+            .Where(m => m.IsEnabled)
+            .OrderBy(m => m.Provider!.Name).ThenBy(m => m.Name)
+            .ToListAsync();
     }
 
     private async Task CreateAsync()
     {
+        Model? model = null;
+        if (_new.ModelId > 0)
+        {
+            await using var ctx = await DbFactory.CreateDbContextAsync();
+            model = await ctx.Models.Include(m => m.Provider).FirstOrDefaultAsync(m => m.Id == _new.ModelId);
+            if (model is not null)
+            {
+                _new.ModelId = model.Id;
+            }
+            else
+            {
+                _new.ModelId = 0;
+            }
+        }
+        else
+        {
+            _new.ModelId = 0;
+        }
         await using var db = await DbFactory.CreateDbContextAsync();
         db.AgentTasks.Add(_new);
         await db.SaveChangesAsync();
         _new = Blank();
         _showCreate = false;
-        await ReloadAsync();
+        await LoadAsync();
     }
 
     private async Task RunAsync(int taskId)
@@ -114,7 +153,7 @@ else
         await using var db = await DbFactory.CreateDbContextAsync();
         var t = await db.AgentTasks.FindAsync(taskId);
         if (t is not null) { db.AgentTasks.Remove(t); await db.SaveChangesAsync(); }
-        await ReloadAsync();
+        await LoadAsync();
     }
 
     private static AgentTask Blank() => new()

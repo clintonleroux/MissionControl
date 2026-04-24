@@ -1,7 +1,7 @@
 // Mission Control <-> Claude Agent SDK bridge
 //
 // Exposes a tiny HTTP surface the C# Blazor app calls when it wants to run an agent:
-//   POST /run       { taskName, prompt, systemPrompt, cwd, allowedTools, maxTurns, apiKey }
+//   POST /run       { taskName, prompt, systemPrompt, model, cwd, allowedTools, maxTurns, apiKey }
 //   GET  /runs/:id  -> { status, result, transcript, ... }
 //   GET  /health    -> 200 always (no env-var dependency; the C# app owns the API key)
 //
@@ -20,8 +20,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Tiny config file for bridge-only settings (just the port for now).
-let config = { port: 4100 };
+let config = { port: 4200 };
 const configPath = join(__dirname, 'config.json');
 if (existsSync(configPath)) {
   try {
@@ -35,8 +34,6 @@ const PORT = config.port;
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
-// In-memory run registry. The C# side is the source of truth for persistence;
-// this is just so GET /runs/:id can answer while a run is in flight.
 const runs = new Map();
 
 app.get('/health', (req, res) => {
@@ -48,6 +45,7 @@ app.post('/run', async (req, res) => {
     taskName = 'unnamed',
     prompt,
     systemPrompt,
+    model,
     cwd,
     allowedTools,
     maxTurns = 10,
@@ -61,24 +59,23 @@ app.post('/run', async (req, res) => {
     return res.status(400).json({ error: 'cwd (vault path) is required' });
   }
   if (!apiKey || typeof apiKey !== 'string') {
-    return res.status(400).json({ error: 'apiKey is required (set it in appsettings.Local.json)' });
+    return res.status(400).json({ error: 'apiKey is required (set it in provider config)' });
   }
 
   const runId = randomUUID();
   const startedAt = Date.now();
   runs.set(runId, { status: 'running', startedAt, events: [] });
 
-  console.log(`[run ${runId}] start: ${taskName}`);
+  console.log(`[run ${runId}] start: ${taskName} (model: ${model})`);
 
-  // The SDK reads ANTHROPIC_API_KEY from process.env. Set it per-run so the key
-  // stays owned by the C# config layer and nothing lives in the shell environment.
   const previousKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = apiKey;
 
   const options = {
+    model,
     cwd,
     maxTurns,
-    permissionMode: 'acceptEdits', // autonomous for MVP — restrict later
+    permissionMode: 'acceptEdits',
   };
   if (systemPrompt) options.systemPrompt = systemPrompt;
   if (Array.isArray(allowedTools) && allowedTools.length > 0) {
@@ -88,12 +85,12 @@ app.post('/run', async (req, res) => {
   try {
     const transcript = [];
     let finalText = null;
+    let totalUsage = { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUsd: 0 };
 
     for await (const message of query({ prompt, options })) {
       transcript.push(message);
       runs.get(runId).events.push(message);
 
-      // Stream assistant text as we go (handy for debugging/log tail).
       if (message.type === 'assistant' && message.message?.content) {
         for (const block of message.message.content) {
           if (block.type === 'text') {
@@ -103,6 +100,15 @@ app.post('/run', async (req, res) => {
       }
       if (message.type === 'result') {
         finalText = message.result ?? null;
+        if (message.usage) {
+          totalUsage = {
+            inputTokens: message.usage.input_tokens ?? 0,
+            outputTokens: message.usage.output_tokens ?? 0,
+            cacheReadInputTokens: message.usage.cache_read_input_tokens ?? 0,
+            cacheCreationInputTokens: message.usage.cache_creation_input_tokens ?? 0,
+            costUsd: message.usage.total_cost_usd ?? 0
+          };
+        }
       }
     }
 
@@ -113,6 +119,7 @@ app.post('/run', async (req, res) => {
       transcript: JSON.stringify(transcript, null, 2),
       error: null,
       durationMs: Date.now() - startedAt,
+      usage: totalUsage
     };
     runs.set(runId, { ...runs.get(runId), ...record, status: 'success' });
     console.log(`[run ${runId}] done in ${record.durationMs}ms`);
@@ -126,11 +133,11 @@ app.post('/run', async (req, res) => {
       transcript: JSON.stringify(runs.get(runId)?.events ?? [], null, 2),
       error: err?.message || String(err),
       durationMs: Date.now() - startedAt,
+      usage: null
     };
     runs.set(runId, { ...runs.get(runId), ...record, status: 'error' });
     res.status(500).json(record);
   } finally {
-    // Restore whatever was (or wasn't) there before, so concurrent runs don't clobber each other.
     if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
     else process.env.ANTHROPIC_API_KEY = previousKey;
   }

@@ -3,11 +3,6 @@ using MissionControl.Models;
 
 namespace MissionControl.Services;
 
-/// <summary>
-/// Thin wrapper over the Obsidian vault filesystem.
-/// The vault is both the agent's knowledge base (the agent Reads files here)
-/// and the destination for run transcripts (we Write files here).
-/// </summary>
 public class ObsidianVaultService
 {
     private readonly string _vaultRoot;
@@ -22,11 +17,13 @@ public class ObsidianVaultService
         var configured = cfg["Obsidian:VaultPath"];
         if (string.IsNullOrWhiteSpace(configured))
         {
-            throw new InvalidOperationException(
-                "Obsidian:VaultPath is not set. Copy appsettings.Local.json.example to " +
-                "appsettings.Local.json and set Obsidian:VaultPath to your vault folder.");
+            _vaultRoot = Path.Combine(AppContext.BaseDirectory, "vault");
+            _log.LogWarning("Obsidian:VaultPath not set. Using default: {Root}", _vaultRoot);
         }
-        _vaultRoot = Path.GetFullPath(configured);
+        else
+        {
+            _vaultRoot = Path.GetFullPath(configured);
+        }
 
         Directory.CreateDirectory(_vaultRoot);
         Directory.CreateDirectory(Path.Combine(_vaultRoot, RunsSubfolder));

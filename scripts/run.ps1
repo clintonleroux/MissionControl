@@ -1,57 +1,36 @@
 # Mission Control launcher for Windows (PowerShell)
 # Usage:  .\scripts\run.ps1
-#   - Installs claude-bridge npm deps on first run
-#   - Starts the Node bridge + Blazor web app together
-#   - Ctrl-C stops both cleanly
-# Requires: Node.js 20+, .NET 8 SDK. No environment variables needed — all
-# config lives in MissionControl.Web\appsettings.Local.json.
+#   - Starts opencode serve on port 4096
+#   - Starts zen-bridge on port 4100
+#   - Starts Blazor web app
+#   - Ctrl-C stops all cleanly
+# Requires: .NET 8 SDK, Bun (https://bun.sh).
 
 $ErrorActionPreference = 'Stop'
 
 $root      = Split-Path -Parent $PSScriptRoot
-$bridgeDir = Join-Path $root 'claude-bridge'
+$zenBridgeDir = Join-Path $root 'zen-bridge'
 $webDir    = Join-Path $root 'MissionControl.Web'
-$localCfg  = Join-Path $webDir 'appsettings.Local.json'
-
-# --- Preflight ------------------------------------------------------------
 
 function Assert-Command($name, $hint) {
     if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
         throw "$name is not on PATH. $hint"
     }
 }
-Assert-Command 'node'   'Install Node.js 20+ from https://nodejs.org'
-Assert-Command 'npm'    'npm ships with Node.js; reinstall Node if missing.'
+$env:Path = "C:\Users\$env:USERNAME\.bun\bin;$env:Path"
+Assert-Command 'bun'    'Install Bun from https://bun.sh'
 Assert-Command 'dotnet' 'Install the .NET 8 SDK from https://dotnet.microsoft.com/download'
 
-if (-not (Test-Path $localCfg)) {
-    Write-Host ""
-    Write-Host "First-time setup:" -ForegroundColor Yellow
-    Write-Host "  $localCfg is missing."
-    Write-Host "  Copy appsettings.Local.json.example to appsettings.Local.json,"
-    Write-Host "  then set Obsidian:VaultPath and Anthropic:ApiKey inside it."
-    Write-Host ""
-    throw "Missing appsettings.Local.json"
-}
+Write-Host "==> Starting opencode serve on port 4096..." -ForegroundColor Cyan
+$opencode = Start-Process -FilePath 'bun' -ArgumentList 'x', 'opencode-ai', 'serve', '--port', '4096' -PassThru -NoNewWindow
+Write-Host "    opencode PID=$($opencode.Id)"
 
-# --- Install bridge deps on first run -------------------------------------
+Start-Sleep -Seconds 2
 
-if (-not (Test-Path (Join-Path $bridgeDir 'node_modules'))) {
-    Write-Host "==> Installing claude-bridge npm dependencies (first run)..." -ForegroundColor Cyan
-    Push-Location $bridgeDir
-    try   { & npm install }
-    finally { Pop-Location }
-    if ($LASTEXITCODE -ne 0) { throw "npm install failed (exit $LASTEXITCODE)" }
-}
+Write-Host "==> Starting zen-bridge on port 4100..." -ForegroundColor Cyan
+$zenBridge = Start-Process -FilePath 'node' -ArgumentList 'server.js' -WorkingDirectory $zenBridgeDir -PassThru -NoNewWindow
+Write-Host "    zen-bridge PID=$($zenBridge.Id)"
 
-# --- Start the bridge as a tracked background process ---------------------
-
-Write-Host "==> Starting claude-bridge..." -ForegroundColor Cyan
-$bridge = Start-Process -FilePath 'node' -ArgumentList 'server.js' `
-    -WorkingDirectory $bridgeDir -PassThru -NoNewWindow
-Write-Host "    claude-bridge PID=$($bridge.Id)"
-
-# Give Express a moment to bind its port.
 Start-Sleep -Seconds 1
 
 try {
@@ -61,9 +40,13 @@ try {
     finally { Pop-Location }
 }
 finally {
-    if ($bridge -and -not $bridge.HasExited) {
+    if ($opencode -and -not $opencode.HasExited) {
         Write-Host ""
-        Write-Host "==> Shutting down claude-bridge..." -ForegroundColor Cyan
-        Stop-Process -Id $bridge.Id -Force -ErrorAction SilentlyContinue
+        Write-Host "==> Shutting down opencode..." -ForegroundColor Cyan
+        Stop-Process -Id $opencode.Id -Force -ErrorAction SilentlyContinue
+    }
+    if ($zenBridge -and -not $zenBridge.HasExited) {
+        Write-Host "==> Shutting down zen-bridge..." -ForegroundColor Cyan
+        Stop-Process -Id $zenBridge.Id -Force -ErrorAction SilentlyContinue
     }
 }

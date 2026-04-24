@@ -1,33 +1,22 @@
 using Microsoft.EntityFrameworkCore;
 using MissionControl.Components;
 using MissionControl.Data;
+using MissionControl.Models;
 using MissionControl.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load appsettings.Local.json (gitignored) on top of appsettings.json so secrets like
-// ApiKey and host-specific paths (vault) stay out of version control.
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
-// Blazor Server
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// EF Core + SQLite. Use a factory so services that hop threads (AgentRunner background work)
-// each get their own scoped context.
 var connectionString = builder.Configuration.GetConnectionString("MissionControl")
                        ?? "Data Source=missioncontrol.db";
 builder.Services.AddDbContextFactory<MissionControlDb>(opt => opt.UseSqlite(connectionString));
 
-// Claude bridge (Node.js sidecar) as a typed HttpClient
-builder.Services.AddHttpClient<ClaudeBridgeClient>(client =>
-{
-    var baseUrl = builder.Configuration["ClaudeBridge:BaseUrl"] ?? "http://localhost:4100";
-    client.BaseAddress = new Uri(baseUrl);
-    client.Timeout = TimeSpan.FromMinutes(10); // agent runs can be long
-});
-
 builder.Services.AddSingleton<ObsidianVaultService>();
+builder.Services.AddSingleton<IProviderBridgeRegistry, ProviderBridgeRegistry>();
 builder.Services.AddScoped<AgentRunner>();
 
 var app = builder.Build();
@@ -45,12 +34,39 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// Create & seed the DB on startup.
 using (var scope = app.Services.CreateScope())
 {
     var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<MissionControlDb>>();
     using var db = factory.CreateDbContext();
-    MissionControlDb.EnsureSeeded(db);
+    await MissionControlDb.EnsureSeededAsync(db);
+
+    var registry = scope.ServiceProvider.GetRequiredService<IProviderBridgeRegistry>();
+    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+
+    var providers = db.Providers.Include(p => p.Models).Where(p => p.IsEnabled).ToList();
+    foreach (var provider in providers)
+    {
+        try
+        {
+            var baseUrl = provider.BaseUrl ?? GetDefaultUrl(provider.Type);
+            var http = new HttpClient { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromMinutes(10) };
+            var logger = loggerFactory.CreateLogger<ProviderBridge>();
+            var bridge = new ProviderBridge(http, logger, provider.Type.ToString().ToLowerInvariant());
+            registry.RegisterBridge(provider.Type, bridge);
+            Console.WriteLine($"Registered bridge for {provider.Name} at {baseUrl}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to register bridge for {provider.Name}: {ex.Message}");
+        }
+    }
 }
 
 app.Run();
+
+static string GetDefaultUrl(ProviderType type) => type switch
+{
+    ProviderType.Opencode => "http://localhost:4100",
+    ProviderType.Claude => "http://localhost:4200",
+    _ => "http://localhost:4100"
+};

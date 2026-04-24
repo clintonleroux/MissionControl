@@ -22,6 +22,10 @@ public class AgentTask
     /// <summary>Max agent turns before the runner stops.</summary>
     public int MaxTurns { get; set; } = 10;
 
+    /// <summary>Optional model to use. If null, provider's default is used.</summary>
+    public int ModelId { get; set; }
+    public Model? Model { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<AgentRun> Runs { get; set; } = new();

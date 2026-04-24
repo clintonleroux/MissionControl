@@ -1,0 +1,343 @@
+@page "/providers"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MissionControl.Models
+@inject IDbContextFactory<MissionControlDb> DbFactory
+@inject NavigationManager Nav
+
+<PageTitle>Providers · Mission Control</PageTitle>
+
+<h1>Providers</h1>
+
+<div class="row gap">
+    <button class="btn primary" @onclick="() => _showCreate = !_showCreate">
+        @(_showCreate ? "Cancel" : "+ New provider")
+    </button>
+</div>
+
+@if (_showCreate)
+{
+    <div class="card">
+        <h3>New provider</h3>
+        <EditForm Model="_newProvider" OnValidSubmit="CreateProviderAsync">
+            <div class="form-row">
+                <label>Name</label>
+                <InputText @bind-Value="_newProvider.Name" class="input" />
+            </div>
+            <div class="form-row">
+                <label>Type</label>
+                <InputSelect @bind-Value="_newProvider.Type" class="input">
+                    <option value="@ProviderType.Opencode">Opencode</option>
+                    <option value="@ProviderType.Claude">Claude</option>
+                </InputSelect>
+            </div>
+            <div class="form-row">
+                <label>Base URL</label>
+                <InputText @bind-Value="_newProvider.BaseUrl" class="input" placeholder="http://localhost:4100" />
+            </div>
+            <div class="form-row">
+                <label>API Key</label>
+                <InputText @bind-Value="_newProvider.ApiKey" class="input" type="password" />
+            </div>
+            <div class="form-row">
+                <label>Monthly Credit Limit ($)</label>
+                <InputNumber @bind-Value="_newProvider.MonthlyCreditLimit" class="input short" placeholder="500" />
+            </div>
+            <button type="submit" class="btn primary">Create</button>
+        </EditForm>
+    </div>
+}
+
+@if (_providers.Count == 0)
+{
+    <p class="muted">No providers defined yet.</p>
+}
+else
+{
+@foreach (var p in _providers)
+{
+    <div class="card">
+        @if (_editingProvider?.Id == p.Id)
+        {
+            <h3>Edit provider</h3>
+            <EditForm Model="_editingProvider" OnValidSubmit="() => SaveProviderAsync()">
+                <div class="form-row">
+                    <label>Name</label>
+                    <InputText @bind-Value="_editingProvider.Name" class="input" />
+                </div>
+                <div class="form-row">
+                    <label>Base URL</label>
+                    <InputText @bind-Value="_editingProvider.BaseUrl" class="input" />
+                </div>
+                <div class="form-row">
+                    <label>API Key</label>
+                    <InputText @bind-Value="_editingProvider.ApiKey" class="input" type="password" />
+                </div>
+                <div class="form-row">
+                    <label>Monthly Credit Limit ($)</label>
+                    <InputNumber @bind-Value="_editingProvider.MonthlyCreditLimit" class="input short" />
+                </div>
+                <div class="form-row">
+                    <label>
+                        <InputCheckbox @bind-Value="_editingProvider.IsEnabled" />
+                        Enabled
+                    </label>
+                </div>
+                <button type="submit" class="btn primary">Save</button>
+                <button type="button" class="btn" @onclick="() => _editingProvider = null">Cancel</button>
+            </EditForm>
+        }
+        else
+        {
+            <div class="row gap">
+                <h3>@p.Name</h3>
+                <span class="badge">@p.Type</span>
+                <span class="badge @GetOnline(p.Id)">@GetOnlineText(p.Id)</span>
+            </div>
+            <p class="muted">@p.BaseUrl</p>
+            
+            @if (p.MonthlyCreditLimit > 0)
+            {
+                <div class="usage-bar">
+                    <div class="usage-label">
+                        <span>This month:</span>
+                        <span>@p.TokensUsedThisMonth.ToString("N0") / @p.MonthlyCreditLimit.Value.ToString("C")</span>
+                    </div>
+                    <div class="usage-track">
+                        <div class="usage-fill" style="width: @Math.Min(100, (double)p.TokensUsedThisMonth / p.MonthlyCreditLimit.Value * 100)%"></div>
+                    </div>
+                </div>
+            }
+            
+            <button class="btn" @onclick="() => EditProvider(p)">Edit</button>
+            <button class="btn danger" @onclick="() => DeleteProviderAsync(p.Id)">Delete</button>
+        }
+        
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Model</th>
+                    <th>Provider Model ID</th>
+                    <th>Context</th>
+                    <th>Max Output</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in p.Models)
+                {
+                    <tr>
+                        @if (_editingModel?.Id == m.Id)
+                        {
+                            <td colspan="4">
+                                <EditForm Model="_editingModel" OnValidSubmit="() => SaveModelAsync()">
+                                    <div class="form-row">
+                                        <label>Name</label>
+                                        <InputText @bind-Value="_editingModel.Name" class="input" />
+                                    </div>
+                                    <div class="form-row">
+                                        <label>Provider Model ID</label>
+                                        <InputText @bind-Value="_editingModel.ProviderModelId" class="input" />
+                                    </div>
+                                    <div class="form-row">
+                                        <label>Context Window</label>
+                                        <InputNumber @bind-Value="_editingModel.ContextWindow" class="input short" />
+                                    </div>
+                                    <div class="form-row">
+                                        <label>Max Output Tokens</label>
+                                        <InputNumber @bind-Value="_editingModel.MaxOutputTokens" class="input short" />
+                                    </div>
+                                    <button type="submit" class="btn primary">Save</button>
+                                    <button type="button" class="btn" @onclick="() => _editingModel = null">Cancel</button>
+                                </EditForm>
+                            </td>
+                        }
+                        else
+                        {
+                            <td>@m.Name</td>
+                            <td><code>@m.ProviderModelId</code></td>
+                            <td>@m.ContextWindow.ToString("N0")</td>
+                            <td>@m.MaxOutputTokens.ToString("N0")</td>
+                            <td>
+                                <button class="btn" @onclick="() => EditModel(m)">Edit</button>
+                                <button class="btn danger" @onclick="() => DeleteModelAsync(m.Id)">Delete</button>
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+        
+        @if (_editingProvider is null && _editingModel is null)
+        {
+            <button class="btn" @onclick="() => ShowAddModel(p)">+ Add Model</button>
+        }
+    </div>
+}
+}
+
+@if (_showAddModel)
+{
+    <div class="card">
+        <h3>Add model to @_addModelProvider?.Name</h3>
+        <EditForm Model="_newModel" OnValidSubmit="CreateModelAsync">
+            <div class="form-row">
+                <label>Name</label>
+                <InputText @bind-Value="_newModel.Name" class="input" />
+            </div>
+            <div class="form-row">
+                <label>Provider Model ID</label>
+                <InputText @bind-Value="_newModel.ProviderModelId" class="input" placeholder="claude-sonnet-4-6" />
+            </div>
+            <div class="form-row">
+                <label>Context Window</label>
+                <InputNumber @bind-Value="_newModel.ContextWindow" class="input short" />
+            </div>
+            <div class="form-row">
+                <label>Max Output Tokens</label>
+                <InputNumber @bind-Value="_newModel.MaxOutputTokens" class="input short" />
+            </div>
+            <button type="submit" class="btn primary">Add</button>
+            <button type="button" class="btn" @onclick="() => _showAddModel = false">Cancel</button>
+        </EditForm>
+    </div>
+}
+
+@code {
+    private List<Provider> _providers = new();
+    private Dictionary<int, bool> _online = new();
+    private bool _showCreate;
+    private Provider _newProvider = new() { Type = ProviderType.Claude, BaseUrl = "http://localhost:4200", MonthlyCreditLimit = 500 };
+    private Provider? _editingProvider;
+    private bool _showAddModel;
+    private Provider? _addModelProvider;
+    private Model _newModel = new();
+    private Model? _editingModel;
+
+    private string GetOnline(int id) => _online.TryGetValue(id, out var online) && online ? "ok" : "bad";
+    private string GetOnlineText(int id) => _online.TryGetValue(id, out var online) && online ? "online" : "offline";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _providers = await db.Providers.Include(p => p.Models).OrderBy(p => p.Name).ToListAsync();
+        
+        _online = new();
+        foreach (var p in _providers)
+        {
+            _online[p.Id] = false;
+        }
+    }
+
+    private void EditProvider(Provider p)
+    {
+        _editingProvider = new Provider
+        {
+            Id = p.Id,
+            Name = p.Name,
+            Type = p.Type,
+            BaseUrl = p.BaseUrl,
+            ApiKey = p.ApiKey,
+            MonthlyCreditLimit = p.MonthlyCreditLimit,
+            IsEnabled = p.IsEnabled
+        };
+    }
+
+    private async Task SaveProviderAsync()
+    {
+        if (_editingProvider is null) return;
+        
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var p = await db.Providers.FindAsync(_editingProvider.Id);
+        if (p is not null)
+        {
+            p.Name = _editingProvider.Name;
+            p.BaseUrl = _editingProvider.BaseUrl;
+            p.ApiKey = _editingProvider.ApiKey;
+            p.MonthlyCreditLimit = _editingProvider.MonthlyCreditLimit;
+            p.IsEnabled = _editingProvider.IsEnabled;
+            await db.SaveChangesAsync();
+        }
+        
+        _editingProvider = null;
+        await LoadAsync();
+    }
+
+    private void EditModel(Model m)
+    {
+        _editingModel = new Model
+        {
+            Id = m.Id,
+            ProviderId = m.ProviderId,
+            Name = m.Name,
+            ProviderModelId = m.ProviderModelId,
+            ContextWindow = m.ContextWindow,
+            MaxOutputTokens = m.MaxOutputTokens
+        };
+    }
+
+    private async Task SaveModelAsync()
+    {
+        if (_editingModel is null) return;
+        
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var m = await db.Models.FindAsync(_editingModel.Id);
+        if (m is not null)
+        {
+            m.Name = _editingModel.Name;
+            m.ProviderModelId = _editingModel.ProviderModelId;
+            m.ContextWindow = _editingModel.ContextWindow;
+            m.MaxOutputTokens = _editingModel.MaxOutputTokens;
+            await db.SaveChangesAsync();
+        }
+        
+        _editingModel = null;
+        await LoadAsync();
+    }
+
+    private async Task CreateProviderAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Providers.Add(_newProvider);
+        await db.SaveChangesAsync();
+        _newProvider = new() { Type = ProviderType.Claude, BaseUrl = "http://localhost:4200", MonthlyCreditLimit = 500 };
+        _showCreate = false;
+        await LoadAsync();
+    }
+
+    private async Task DeleteProviderAsync(int id)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var p = await db.Providers.FindAsync(id);
+        if (p is not null) { db.Providers.Remove(p); await db.SaveChangesAsync(); }
+        await LoadAsync();
+    }
+
+    private void ShowAddModel(Provider p)
+    {
+        _addModelProvider = p;
+        _newModel = new() { ProviderId = p.Id };
+        _showAddModel = true;
+    }
+
+    private async Task CreateModelAsync()
+    {
+        if (_addModelProvider is null) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Models.Add(_newModel);
+        await db.SaveChangesAsync();
+        _newModel = new();
+        _showAddModel = false;
+        await LoadAsync();
+    }
+
+    private async Task DeleteModelAsync(int id)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var m = await db.Models.FindAsync(id);
+        if (m is not null) { db.Models.Remove(m); await db.SaveChangesAsync(); }
+        await LoadAsync();
+    }
+}
