@@ -1,0 +1,68 @@
+@page "/runs"
+@rendermode InteractiveServer
+@inject IDbContextFactory<MissionControlDb> DbFactory
+@implements IDisposable
+
+<PageTitle>Runs · Mission Control</PageTitle>
+
+<h1>Runs</h1>
+
+@if (_runs.Count == 0)
+{
+    <p class="muted">No runs yet.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Task</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Completed</th>
+                <th>Vault note</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _runs)
+            {
+                <tr>
+                    <td><a href="@($"runs/{r.Id}")">@r.Id</a></td>
+                    <td>@r.AgentTask?.Name</td>
+                    <td><span class="status @r.Status.ToString().ToLower()">@r.Status</span></td>
+                    <td>@r.StartedAt.ToLocalTime().ToString("MMM dd HH:mm:ss")</td>
+                    <td>@(r.CompletedAt?.ToLocalTime().ToString("MMM dd HH:mm:ss") ?? "—")</td>
+                    <td><code>@(r.VaultNotePath ?? "—")</code></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<AgentRun> _runs = new();
+    private System.Threading.Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        _timer = new System.Threading.Timer(async _ =>
+        {
+            await ReloadAsync();
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    private async Task ReloadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _runs = await db.AgentRuns
+            .Include(r => r.AgentTask)
+            .OrderByDescending(r => r.StartedAt)
+            .Take(50)
+            .ToListAsync();
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

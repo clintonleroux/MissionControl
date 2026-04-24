@@ -1,0 +1,32 @@
+# systemd unit for hosting Mission Control on Linux.
+#
+# Install:
+#   sudo cp scripts/mission-control.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mission-control
+#
+# Configuration lives in MissionControl.Web/appsettings.Local.json on the host.
+# No API key or vault path is exposed through the unit file.
+
+[Unit]
+Description=Mission Control (Blazor + Claude Agent bridge)
+After=network.target
+
+[Service]
+Type=simple
+User=missioncontrol
+WorkingDirectory=/opt/mission-control
+ExecStart=/opt/mission-control/scripts/run-linux.sh
+Restart=on-failure
+RestartSec=5
+
+Environment=ASPNETCORE_ENVIRONMENT=Production
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/mission-control /var/lib/mission-control
+
+[Install]
+WantedBy=multi-user.target

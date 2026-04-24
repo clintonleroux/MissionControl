@@ -1,0 +1,127 @@
+@page "/tasks"
+@rendermode InteractiveServer
+@inject IDbContextFactory<MissionControlDb> DbFactory
+@inject AgentRunner Runner
+@inject NavigationManager Nav
+
+<PageTitle>Tasks · Mission Control</PageTitle>
+
+<h1>Tasks</h1>
+
+<div class="row gap">
+    <button class="btn primary" @onclick="() => _showCreate = !_showCreate">
+        @(_showCreate ? "Cancel" : "+ New task")
+    </button>
+</div>
+
+@if (_showCreate)
+{
+    <div class="card">
+        <h3>New task</h3>
+        <EditForm Model="_new" OnValidSubmit="CreateAsync">
+            <div class="form-row">
+                <label>Name</label>
+                <InputText @bind-Value="_new.Name" class="input" />
+            </div>
+            <div class="form-row">
+                <label>Prompt</label>
+                <InputTextArea @bind-Value="_new.Prompt" class="input" rows="4" />
+            </div>
+            <div class="form-row">
+                <label>System prompt (optional)</label>
+                <InputTextArea @bind-Value="_new.SystemPrompt" class="input" rows="2" />
+            </div>
+            <div class="form-row">
+                <label>Allowed tools (comma-separated)</label>
+                <InputText @bind-Value="_new.AllowedTools" class="input" placeholder="Read,Write,Grep,Glob,Edit" />
+            </div>
+            <div class="form-row">
+                <label>Max turns</label>
+                <InputNumber @bind-Value="_new.MaxTurns" class="input short" />
+            </div>
+            <button type="submit" class="btn primary">Create</button>
+        </EditForm>
+    </div>
+}
+
+@if (_tasks.Count == 0)
+{
+    <p class="muted">No tasks defined yet.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Prompt</th>
+                <th>Tools</th>
+                <th>Turns</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var t in _tasks)
+            {
+                <tr>
+                    <td>@t.Id</td>
+                    <td><strong>@t.Name</strong></td>
+                    <td class="truncate">@t.Prompt</td>
+                    <td>@(t.AllowedTools ?? "—")</td>
+                    <td>@t.MaxTurns</td>
+                    <td class="row gap-sm">
+                        <button class="btn" @onclick="() => RunAsync(t.Id)">Run</button>
+                        <button class="btn danger" @onclick="() => DeleteAsync(t.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<AgentTask> _tasks = new();
+    private bool _showCreate;
+    private AgentTask _new = Blank();
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _tasks = await db.AgentTasks.OrderBy(t => t.Id).ToListAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.AgentTasks.Add(_new);
+        await db.SaveChangesAsync();
+        _new = Blank();
+        _showCreate = false;
+        await ReloadAsync();
+    }
+
+    private async Task RunAsync(int taskId)
+    {
+        var runId = await Runner.StartAsync(taskId);
+        Nav.NavigateTo($"runs/{runId}");
+    }
+
+    private async Task DeleteAsync(int taskId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var t = await db.AgentTasks.FindAsync(taskId);
+        if (t is not null) { db.AgentTasks.Remove(t); await db.SaveChangesAsync(); }
+        await ReloadAsync();
+    }
+
+    private static AgentTask Blank() => new()
+    {
+        Name = "",
+        Prompt = "",
+        AllowedTools = "Read,Write,Grep,Glob",
+        MaxTurns = 10
+    };
+}

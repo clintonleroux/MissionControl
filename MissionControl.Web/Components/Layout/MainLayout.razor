@@ -1,0 +1,17 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark">MC</div>
+            <div class="brand-text">Mission Control</div>
+        </div>
+        <NavMenu />
+        <div class="sidebar-foot">
+            <BridgeStatus />
+        </div>
+    </aside>
+    <main class="content">
+        @Body
+    </main>
+</div>

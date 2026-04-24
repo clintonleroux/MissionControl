@@ -1,0 +1,110 @@
+@page "/"
+@rendermode InteractiveServer
+@inject IDbContextFactory<MissionControlDb> DbFactory
+@inject ObsidianVaultService Vault
+@implements IDisposable
+
+<PageTitle>Dashboard · Mission Control</PageTitle>
+
+<h1>Dashboard</h1>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-label">Tasks</div>
+        <div class="stat-value">@_taskCount</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Running</div>
+        <div class="stat-value">@_running</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Succeeded (24h)</div>
+        <div class="stat-value ok">@_succeeded24h</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Failed (24h)</div>
+        <div class="stat-value bad">@_failed24h</div>
+    </div>
+</div>
+
+<section>
+    <h2>Recent runs</h2>
+    @if (_recent.Count == 0)
+    {
+        <p class="muted">No runs yet. Head to <a href="tasks">Tasks</a> and click <em>Run</em>.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Task</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _recent)
+                {
+                    <tr>
+                        <td><a href="@($"runs/{r.Id}")">@r.Id</a></td>
+                        <td>@r.AgentTask?.Name</td>
+                        <td><span class="status @r.Status.ToString().ToLower()">@r.Status</span></td>
+                        <td>@r.StartedAt.ToLocalTime().ToString("MMM dd HH:mm")</td>
+                        <td>@Duration(r)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<section>
+    <h2>Vault</h2>
+    <p class="muted">Knowledge base path: <code>@Vault.VaultRoot</code></p>
+</section>
+
+@code {
+    private int _taskCount;
+    private int _running;
+    private int _succeeded24h;
+    private int _failed24h;
+    private List<AgentRun> _recent = new();
+    private System.Threading.Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        _timer = new System.Threading.Timer(async _ =>
+        {
+            await ReloadAsync();
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    private async Task ReloadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var since = DateTime.UtcNow.AddHours(-24);
+        _taskCount = await db.AgentTasks.CountAsync();
+        _running = await db.AgentRuns.CountAsync(r => r.Status == AgentRunStatus.Running || r.Status == AgentRunStatus.Queued);
+        _succeeded24h = await db.AgentRuns.CountAsync(r => r.Status == AgentRunStatus.Succeeded && r.StartedAt >= since);
+        _failed24h = await db.AgentRuns.CountAsync(r => r.Status == AgentRunStatus.Failed && r.StartedAt >= since);
+        _recent = await db.AgentRuns
+            .Include(r => r.AgentTask)
+            .OrderByDescending(r => r.StartedAt)
+            .Take(10)
+            .ToListAsync();
+    }
+
+    private static string Duration(AgentRun r)
+    {
+        var end = r.CompletedAt ?? DateTime.UtcNow;
+        var span = end - r.StartedAt;
+        return span.TotalSeconds < 60 ? $"{span.TotalSeconds:0}s" : $"{span.TotalMinutes:0}m {span.Seconds}s";
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

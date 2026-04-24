@@ -1,0 +1,28 @@
+@rendermode InteractiveServer
+@inject ClaudeBridgeClient Bridge
+@implements IDisposable
+
+<div class="bridge-status @(_online ? "ok" : "bad")">
+    <span class="dot"></span>
+    <span>Bridge: @(_online ? "online" : "offline")</span>
+</div>
+
+@code {
+    private bool _online;
+    private System.Threading.Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        _timer = new System.Threading.Timer(async _ =>
+        {
+            var ok = await Bridge.PingAsync();
+            if (ok != _online)
+            {
+                _online = ok;
+                await InvokeAsync(StateHasChanged);
+            }
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(5));
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}
