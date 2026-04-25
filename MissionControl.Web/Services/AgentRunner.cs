@@ -33,9 +33,16 @@ public class AgentRunner
             .FirstOrDefaultAsync(t => t.Id == taskId, ct)
             ?? throw new InvalidOperationException($"Task {taskId} not found.");
 
+        if (task.Status == MissionControl.Models.Enums.TaskStatus.Completed)
+            throw new InvalidOperationException($"Task {taskId} is already completed.");
+
+        task.Status = MissionControl.Models.Enums.TaskStatus.Running;
+        await db.SaveChangesAsync(ct);
+
         var run = new AgentRun
         {
             AgentTaskId = task.Id,
+            ProjectId = task.ProjectId,
             Status = AgentRunStatus.Queued,
             StartedAt = DateTime.UtcNow
         };
@@ -133,6 +140,12 @@ public class AgentRunner
 
             run.VaultNotePath = await _vault.WriteRunNoteAsync(task, run);
             await db.SaveChangesAsync();
+
+            task.Status = run.Status == AgentRunStatus.Succeeded 
+                ? MissionControl.Models.Enums.TaskStatus.Completed 
+                : MissionControl.Models.Enums.TaskStatus.Failed;
+            await db.SaveChangesAsync();
+
             _log.LogInformation("Run {RunId} finished: {Status}", run.Id, run.Status);
         }
         catch (Exception ex)
@@ -142,6 +155,9 @@ public class AgentRunner
             run.ErrorMessage = ex.Message;
             run.CompletedAt = DateTime.UtcNow;
             try { run.VaultNotePath = await _vault.WriteRunNoteAsync(task, run); } catch { }
+            await db.SaveChangesAsync();
+
+            task.Status = MissionControl.Models.Enums.TaskStatus.Failed;
             await db.SaveChangesAsync();
         }
     }

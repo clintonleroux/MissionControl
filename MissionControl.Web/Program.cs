@@ -17,7 +17,8 @@ builder.Services.AddDbContextFactory<MissionControlDb>(opt => opt.UseSqlite(conn
 
 builder.Services.AddSingleton<ObsidianVaultService>();
 builder.Services.AddSingleton<IProviderBridgeRegistry, ProviderBridgeRegistry>();
-builder.Services.AddScoped<AgentRunner>();
+builder.Services.AddSingleton<AgentRunner>();
+builder.Services.AddHostedService<TaskSchedulerService>();
 
 var app = builder.Build();
 

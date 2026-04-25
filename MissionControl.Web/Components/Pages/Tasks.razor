@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using Microsoft.EntityFrameworkCore
 @using MissionControl.Models
+@using MissionControl.Models.Enums
 @inject IDbContextFactory<MissionControlDb> DbFactory
 @inject AgentRunner Runner
 @inject NavigationManager Nav
@@ -17,6 +18,13 @@
         {
             <option value="@p.Id">@p.Name</option>
         }
+    </select>
+    <select class="input" @bind="_filterStatus" @bind:after="OnFilterChanged">
+        <option value="">All statuses</option>
+        <option value="Pending">Pending</option>
+        <option value="Running">Running</option>
+        <option value="Completed">Completed</option>
+        <option value="Failed">Failed</option>
     </select>
     <button class="btn primary" @onclick="() => { _showCreate = !_showCreate; _editing = null; }">
         @(_showCreate ? "Cancel" : "+ New task")
@@ -45,6 +53,7 @@ else
             <tr>
                 <th>#</th>
                 <th>Name</th>
+                <th>Status</th>
                 <th>Model</th>
                 <th>Prompt</th>
                 <th>Tools</th>
@@ -58,7 +67,7 @@ else
                 @if (_editing?.Id == t.Id)
                 {
                     <tr>
-                        <td colspan="7">
+                        <td colspan="8">
                             <EditForm Model="_editing" OnValidSubmit="() => SaveAsync()">
                                 <h4>Edit task #@t.Id</h4>
                                 <TaskFields _model="_editing" _models="_models" />
@@ -73,12 +82,21 @@ else
                     <tr>
                         <td>@t.Id</td>
                         <td><strong>@t.Name</strong></td>
+                        <td><span class="badge">@t.Status</span></td>
                         <td>@(t.Model?.Provider?.Name ?? "?")/@(t.Model?.Name ?? "—")</td>
                         <td class="truncate">@t.Prompt</td>
                         <td>@(t.AllowedTools ?? "—")</td>
                         <td>@t.MaxTurns</td>
                         <td class="row gap-sm">
-                            <button class="btn" @onclick="() => RunAsync(t.Id)">Run</button>
+                            @if (t.Status != MissionControl.Models.Enums.TaskStatus.Completed && t.Status != MissionControl.Models.Enums.TaskStatus.Running)
+                            {
+                                <button class="btn" @onclick="() => RunAsync(t.Id)">Run</button>
+                            }
+                            else if (t.Status == MissionControl.Models.Enums.TaskStatus.Running)
+                            {
+                                <span class="badge">Running...</span>
+                            }
+                            <button class="btn" @onclick="() => ViewTask(t.Id)">View</button>
                             <button class="btn" @onclick="() => EditTask(t)">Edit</button>
                             <button class="btn danger" @onclick="() => DeleteAsync(t.Id)">Delete</button>
                         </td>
@@ -95,6 +113,7 @@ else
     private List<Project> _projects = new();
     [SupplyParameterFromQuery] private int ProjectId { get; set; }
     private int _filterProjectId;
+    private string _filterStatus = "";
     private bool _showCreate;
     private AgentTask _new = Blank();
     private AgentTask? _editing;
@@ -111,12 +130,19 @@ else
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         _projects = await db.Projects.Where(p => p.IsActive).OrderBy(p => p.Name).ToListAsync();
-        _tasks = await db.AgentTasks
+        var query = db.AgentTasks
             .Include(t => t.Model).ThenInclude(m => m!.Provider)
             .Include(t => t.Project)
             .Where(t => _filterProjectId == 0 || t.ProjectId == _filterProjectId)
-            .OrderBy(t => t.Id)
-            .ToListAsync();
+            .AsQueryable();
+
+        if (!string.IsNullOrEmpty(_filterStatus))
+        {
+            var status = Enum.Parse<MissionControl.Models.Enums.TaskStatus>(_filterStatus);
+            query = query.Where(t => t.Status == status);
+        }
+
+        _tasks = await query.OrderBy(t => t.Id).ToListAsync();
         _models = await db.Models
             .Include(m => m.Provider)
             .Where(m => m.IsEnabled)
@@ -179,6 +205,20 @@ else
     {
         var runId = await Runner.StartAsync(taskId);
         Nav.NavigateTo($"runs/{runId}");
+    }
+
+    private async Task ViewTask(int taskId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var runs = await db.AgentRuns
+            .Where(r => r.AgentTaskId == taskId)
+            .OrderByDescending(r => r.StartedAt)
+            .Take(1)
+            .ToListAsync();
+        if (runs.Count > 0)
+            Nav.NavigateTo($"/runs/{runs.First().Id}");
+        else
+            Nav.NavigateTo("/tasks");
     }
 
     private async Task DeleteAsync(int taskId)

@@ -48,6 +48,10 @@ public class MissionControlDb : DbContext
         b.Entity<AgentRun>()
             .Property(r => r.Status)
             .HasConversion<string>();
+
+        b.Entity<AgentTask>()
+            .Property(t => t.Status)
+            .HasConversion<string>();
     }
 
     public static async Task EnsureSeededAsync(MissionControlDb db)

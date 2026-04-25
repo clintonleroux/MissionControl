@@ -1,3 +1,5 @@
+using MissionControl.Models.Enums;
+
 namespace MissionControl.Models;
 
 /// <summary>
@@ -21,6 +23,8 @@ public class AgentTask
 
     /// <summary>Max agent turns before the runner stops.</summary>
     public int MaxTurns { get; set; } = 10;
+
+    public MissionControl.Models.Enums.TaskStatus Status { get; set; } = MissionControl.Models.Enums.TaskStatus.Pending;
 
     /// <summary>Optional model to use. If null, provider's default is used.</summary>
     public int? ModelId { get; set; }
