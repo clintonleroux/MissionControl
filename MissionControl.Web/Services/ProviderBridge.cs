@@ -19,7 +19,8 @@ public record BridgeRunRequest(
     [property: JsonPropertyName("allowedTools")] string[]? AllowedTools,
     [property: JsonPropertyName("maxTurns")] int MaxTurns,
     [property: JsonPropertyName("apiKey")] string ApiKey,
-    [property: JsonPropertyName("apiEndpoint")] string? ApiEndpoint
+    [property: JsonPropertyName("apiEndpoint")] string? ApiEndpoint,
+    [property: JsonPropertyName("aiSdkPackage")] string? AiSdkPackage
 );
 
 public record BridgeUsage(

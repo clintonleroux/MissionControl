@@ -13,6 +13,11 @@ public class Model
 
     public string? Description { get; set; }
 
+    public string? ApiEndpoint { get; set; }
+
+    /// <summary>AI SDK package: "openai", "anthropic", "google", or "openai-compatible"</summary>
+    public string? AiSdkPackage { get; set; }
+
     public int ContextWindow { get; set; } = 200000;
 
     public int MaxOutputTokens { get; set; } = 32000;

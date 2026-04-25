@@ -109,7 +109,8 @@ public class AgentRunner
                 AllowedTools: allowedTools,
                 MaxTurns: task.MaxTurns,
                 ApiKey: provider.ApiKey,
-                ApiEndpoint: provider.ApiEndpoint
+                ApiEndpoint: model.ApiEndpoint ?? provider.ApiEndpoint,
+                AiSdkPackage: model.AiSdkPackage
             );
 
             var result = await bridge.RunAsync(req);

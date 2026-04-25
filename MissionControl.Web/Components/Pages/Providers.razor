@@ -143,7 +143,7 @@ else
                     <tr>
                         @if (_editingModel?.Id == m.Id)
                         {
-                            <td colspan="4">
+                            <td colspan="5"> <!-- increased for SDK + endpoint fields -->
                                 <EditForm Model="_editingModel" OnValidSubmit="() => SaveModelAsync()">
                                     <div class="form-row">
                                         <label>Name</label>
@@ -152,6 +152,20 @@ else
                                     <div class="form-row">
                                         <label>Provider Model ID</label>
                                         <InputText @bind-Value="_editingModel.ProviderModelId" class="input" />
+                                    </div>
+                                    <div class="form-row">
+                                        <label>AI SDK Package</label>
+                                        <InputSelect @bind-Value="_editingModel.AiSdkPackage" class="input">
+                                            <option value="">Inherit from provider</option>
+                                            <option value="openai">@@ai-sdk/openai</option>
+                                            <option value="anthropic">@@ai-sdk/anthropic</option>
+                                            <option value="google">@@ai-sdk/google</option>
+                                            <option value="openai-compatible">@@ai-sdk/openai-compatible</option>
+                                        </InputSelect>
+                                    </div>
+                                    <div class="form-row">
+                                        <label>API Endpoint</label>
+                                        <InputText @bind-Value="_editingModel.ApiEndpoint" class="input" placeholder="Inherit from provider" />
                                     </div>
                                     <div class="form-row">
                                         <label>Context Window</label>
@@ -169,7 +183,7 @@ else
                         else
                         {
                             <td>@m.Name</td>
-                            <td><code>@m.ProviderModelId</code></td>
+                            <td><code>@m.ProviderModelId</code>@(string.IsNullOrWhiteSpace(m.AiSdkPackage) ? "" : $" [{m.AiSdkPackage}]")</td>
                             <td>@m.ContextWindow.ToString("N0")</td>
                             <td>@m.MaxOutputTokens.ToString("N0")</td>
                             <td>
@@ -231,6 +245,20 @@ else
             <div class="form-row">
                 <label>Provider Model ID</label>
                 <InputText @bind-Value="_newModel.ProviderModelId" class="input" placeholder="claude-sonnet-4-6" />
+            </div>
+            <div class="form-row">
+                <label>AI SDK Package</label>
+                <InputSelect @bind-Value="_newModel.AiSdkPackage" class="input">
+                    <option value="">Inherit from provider</option>
+                    <option value="openai">@@ai-sdk/openai</option>
+                    <option value="anthropic">@@ai-sdk/anthropic</option>
+                    <option value="google">@@ai-sdk/google</option>
+                    <option value="openai-compatible">@@ai-sdk/openai-compatible</option>
+                </InputSelect>
+            </div>
+            <div class="form-row">
+                <label>API Endpoint</label>
+                <InputText @bind-Value="_newModel.ApiEndpoint" class="input" placeholder="Inherit from provider" />
             </div>
             <div class="form-row">
                 <label>Context Window</label>
@@ -328,7 +356,8 @@ else
                 AllowedTools: null,
                 MaxTurns: 1,
                 ApiKey: p.ApiKey,
-                ApiEndpoint: p.ApiEndpoint
+                ApiEndpoint: m.ApiEndpoint ?? p.ApiEndpoint,
+                AiSdkPackage: m.AiSdkPackage
             );
 
             _testRequest = System.Text.Json.JsonSerializer.Serialize(req, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
@@ -392,6 +421,8 @@ else
             ProviderId = m.ProviderId,
             Name = m.Name,
             ProviderModelId = m.ProviderModelId,
+            AiSdkPackage = m.AiSdkPackage,
+            ApiEndpoint = m.ApiEndpoint,
             ContextWindow = m.ContextWindow,
             MaxOutputTokens = m.MaxOutputTokens
         };
@@ -407,6 +438,8 @@ else
         {
             m.Name = _editingModel.Name;
             m.ProviderModelId = _editingModel.ProviderModelId;
+            m.AiSdkPackage = _editingModel.AiSdkPackage;
+            m.ApiEndpoint = _editingModel.ApiEndpoint;
             m.ContextWindow = _editingModel.ContextWindow;
             m.MaxOutputTokens = _editingModel.MaxOutputTokens;
             await db.SaveChangesAsync();
