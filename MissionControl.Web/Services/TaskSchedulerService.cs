@@ -38,15 +38,24 @@ public class TaskSchedulerService : BackgroundService
     private async Task ProcessPendingTasksAsync(CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        var runningTaskIds = await db.AgentTasks
+            .Where(t => t.Status == MissionControl.Models.Enums.TaskStatus.Running)
+            .Select(t => t.ProjectId)
+            .ToListAsync(ct);
+
         var pendingTasks = await db.AgentTasks
             .Where(t => t.Status == MissionControl.Models.Enums.TaskStatus.Pending)
+            .Where(t => !runningTaskIds.Contains(t.ProjectId))
+            .OrderByDescending(t => t.Priority)
+            .ThenBy(t => t.Id)
             .ToListAsync(ct);
 
         foreach (var task in pendingTasks)
         {
             try
             {
-                _log.LogInformation("Auto-running pending task {TaskId}: {TaskName}", task.Id, task.Name);
+                _log.LogInformation("Auto-running pending task {TaskId}: {TaskName} (priority {Priority})", task.Id, task.Name, task.Priority);
                 await _runner.StartAsync(task.Id, ct);
             }
             catch (Exception ex)

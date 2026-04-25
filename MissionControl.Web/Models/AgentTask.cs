@@ -26,6 +26,8 @@ public class AgentTask
 
     public MissionControl.Models.Enums.TaskStatus Status { get; set; } = MissionControl.Models.Enums.TaskStatus.Pending;
 
+    public int Priority { get; set; } = 0;
+
     /// <summary>Optional model to use. If null, provider's default is used.</summary>
     public int? ModelId { get; set; }
     public Model? Model { get; set; }

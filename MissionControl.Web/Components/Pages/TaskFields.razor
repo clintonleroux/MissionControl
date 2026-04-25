@@ -30,6 +30,15 @@
     <label>Max turns</label>
     <InputNumber @bind-Value="_model.MaxTurns" class="input short" />
 </div>
+<div class="form-row">
+    <label>Priority</label>
+    <InputSelect @bind-Value="_model.Priority" class="input">
+        <option value="0">Low</option>
+        <option value="1">Normal</option>
+        <option value="2">High</option>
+        <option value="3">Urgent</option>
+    </InputSelect>
+</div>
 
 @code {
     [Parameter, EditorRequired] public AgentTask _model { get; set; } = default!;

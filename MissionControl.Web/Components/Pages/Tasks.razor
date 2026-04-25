@@ -142,7 +142,7 @@ else
             query = query.Where(t => t.Status == status);
         }
 
-        _tasks = await query.OrderBy(t => t.Id).ToListAsync();
+        _tasks = await query.OrderByDescending(t => t.Priority).ThenBy(t => t.Id).ToListAsync();
         _models = await db.Models
             .Include(m => m.Provider)
             .Where(m => m.IsEnabled)
