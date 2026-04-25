@@ -42,14 +42,6 @@
                 <label>API Key</label>
                 <InputText @bind-Value="_newProvider.ApiKey" class="input" type="password" />
             </div>
-            <div class="form-row">
-                <label>API Endpoint (optional)</label>
-                <InputText @bind-Value="_newProvider.ApiEndpoint" class="input" placeholder="https://api.openai.com" />
-            </div>
-            <div class="form-row">
-                <label>Monthly Credit Limit ($)</label>
-                <InputNumber @bind-Value="_newProvider.MonthlyCreditLimit" class="input short" placeholder="500" />
-            </div>
             <button type="submit" class="btn primary">Create</button>
         </EditForm>
     </div>
@@ -80,14 +72,6 @@ else
                 <label>API Key</label>
                 <InputText @bind-Value="_editingProvider.ApiKey" class="input" type="password" />
             </div>
-            <div class="form-row">
-                <label>API Endpoint (optional)</label>
-                <InputText @bind-Value="_editingProvider.ApiEndpoint" class="input" placeholder="https://api.openai.com" />
-            </div>
-                <div class="form-row">
-                    <label>Monthly Credit Limit ($)</label>
-                    <InputNumber @bind-Value="_editingProvider.MonthlyCreditLimit" class="input short" />
-                </div>
                 <div class="form-row">
                     <label>
                         <InputCheckbox @bind-Value="_editingProvider.IsEnabled" />
@@ -105,20 +89,7 @@ else
                 <span class="badge">@p.Type</span>
                 <span class="badge @GetOnline(p.Id)">@GetOnlineText(p.Id)</span>
             </div>
-            <p class="muted">@p.BaseUrl@(string.IsNullOrWhiteSpace(p.ApiEndpoint) ? "" : $" → {p.ApiEndpoint}")</p>
-            
-            @if (p.MonthlyCreditLimit > 0)
-            {
-                <div class="usage-bar">
-                    <div class="usage-label">
-                        <span>This month:</span>
-                        <span>@p.TokensUsedThisMonth.ToString("N0") / @p.MonthlyCreditLimit.Value.ToString("C")</span>
-                    </div>
-                    <div class="usage-track">
-                        <div class="usage-fill" style="width: @Math.Min(100, (double)p.TokensUsedThisMonth / p.MonthlyCreditLimit.Value * 100)%"></div>
-                    </div>
-                </div>
-            }
+            <p class="muted">@p.BaseUrl</p>
             
             <button class="btn" @onclick="() => EditProvider(p)">Edit</button>
             <button class="btn danger" @onclick="() => DeleteProviderAsync(p.Id)">Delete</button>
@@ -279,7 +250,7 @@ else
     private Dictionary<int, bool> _online = new();
     private int? _checkingOnline;
     private bool _showCreate;
-    private Provider _newProvider = new() { Type = ProviderType.Opencode, BaseUrl = "http://localhost:4100", MonthlyCreditLimit = 500 };
+    private Provider _newProvider = new() { Type = ProviderType.Opencode, BaseUrl = "http://localhost:4100" };
     private Provider? _editingProvider;
     private bool _showAddModel;
     private Provider? _addModelProvider;
@@ -356,7 +327,7 @@ else
                 AllowedTools: null,
                 MaxTurns: 1,
                 ApiKey: p.ApiKey,
-                ApiEndpoint: m.ApiEndpoint ?? p.ApiEndpoint,
+                ApiEndpoint: m.ApiEndpoint,
                 AiSdkPackage: m.AiSdkPackage
             );
 
@@ -386,8 +357,6 @@ else
             Type = p.Type,
             BaseUrl = p.BaseUrl,
             ApiKey = p.ApiKey,
-            ApiEndpoint = p.ApiEndpoint,
-            MonthlyCreditLimit = p.MonthlyCreditLimit,
             IsEnabled = p.IsEnabled
         };
     }
@@ -403,8 +372,6 @@ else
             p.Name = _editingProvider.Name;
             p.BaseUrl = _editingProvider.BaseUrl;
             p.ApiKey = _editingProvider.ApiKey;
-            p.ApiEndpoint = _editingProvider.ApiEndpoint;
-            p.MonthlyCreditLimit = _editingProvider.MonthlyCreditLimit;
             p.IsEnabled = _editingProvider.IsEnabled;
             await db.SaveChangesAsync();
         }
@@ -454,7 +421,7 @@ else
         await using var db = await DbFactory.CreateDbContextAsync();
         db.Providers.Add(_newProvider);
         await db.SaveChangesAsync();
-        _newProvider = new() { Type = ProviderType.Opencode, BaseUrl = "http://localhost:4100", MonthlyCreditLimit = 500 };
+        _newProvider = new() { Type = ProviderType.Opencode, BaseUrl = "http://localhost:4100" };
         _showCreate = false;
         await LoadAsync();
     }

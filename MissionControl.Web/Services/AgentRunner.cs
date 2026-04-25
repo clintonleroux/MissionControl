@@ -109,7 +109,7 @@ public class AgentRunner
                 AllowedTools: allowedTools,
                 MaxTurns: task.MaxTurns,
                 ApiKey: provider.ApiKey,
-                ApiEndpoint: model.ApiEndpoint ?? provider.ApiEndpoint,
+                ApiEndpoint: model.ApiEndpoint,
                 AiSdkPackage: model.AiSdkPackage
             );
 
@@ -131,7 +131,6 @@ public class AgentRunner
                 run.CostUsd = result.Usage.CostUsd;
             }
 
-            await UpdateProviderUsageAsync(provider, result.Usage);
             run.VaultNotePath = await _vault.WriteRunNoteAsync(task, run);
             await db.SaveChangesAsync();
             _log.LogInformation("Run {RunId} finished: {Status}", run.Id, run.Status);
@@ -145,24 +144,5 @@ public class AgentRunner
             try { run.VaultNotePath = await _vault.WriteRunNoteAsync(task, run); } catch { }
             await db.SaveChangesAsync();
         }
-    }
-
-    private async Task UpdateProviderUsageAsync(Provider provider, BridgeUsage? usage)
-    {
-        if (usage is null) return;
-
-        await using var db = await _dbFactory.CreateDbContextAsync();
-        var p = await db.Providers.FindAsync(provider.Id);
-        if (p is null) return;
-
-        var now = DateTime.UtcNow;
-        if (p.LastUsageResetAt is null || p.LastUsageResetAt.Value.Month != now.Month || p.LastUsageResetAt.Value.Year != now.Year)
-        {
-            p.TokensUsedThisMonth = 0;
-            p.LastUsageResetAt = now;
-        }
-
-        p.TokensUsedThisMonth += usage.InputTokens + usage.OutputTokens;
-        await db.SaveChangesAsync();
     }
 }

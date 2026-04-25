@@ -49,10 +49,9 @@ public class MissionControlDb : DbContext
         {
             Name = "Claude",
             Type = ProviderType.Claude,
-            BaseUrl = "http://localhost:4200",
-            IsEnabled = true,
-            MonthlyCreditLimit = 500,
-            Models = new List<Model>
+BaseUrl = "http://localhost:4200",
+                IsEnabled = true,
+                Models = new List<Model>
             {
                 new() { Name = "Sonnet 4", ProviderModelId = "claude-sonnet-4-6", ContextWindow = 200000, MaxOutputTokens = 32000 },
                 new() { Name = "Haiku 4", ProviderModelId = "claude-haiku-4-5-20251001", ContextWindow = 200000, MaxOutputTokens = 32000 }
@@ -65,7 +64,6 @@ public class MissionControlDb : DbContext
             Type = ProviderType.Opencode,
             BaseUrl = "http://localhost:4100",
             IsEnabled = true,
-            MonthlyCreditLimit = 500,
             Models = new List<Model>
             {
                 // GPT (Responses API)
