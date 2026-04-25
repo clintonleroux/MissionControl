@@ -43,78 +43,156 @@
 }
 else
 {
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Folder</th>
-                <th>Tasks</th>
-                <th>Active</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var p in _projects)
-            {
-                <tr>
-                    <td>
-                        @if (_editingProject?.Id == p.Id)
-                        {
+    @foreach (var p in _projects)
+    {
+        var projectId = p.Id;
+        var isExpanded = _expandedProjects.Contains(projectId);
+
+        <div class="card">
+            <div class="row-between">
+                <div>
+                    @if (_editingProject?.Id == p.Id)
+                    {
+                        <div class="form-row">
+                            <label>Name</label>
                             <InputText @bind-Value="_editingProject.Name" class="input" />
-                        }
-                        else
-                        {
-                            <strong>@p.Name</strong>
-                        }
-                    </td>
-                    <td>
-                        @if (_editingProject?.Id == p.Id)
-                        {
+                        </div>
+                        <div class="form-row">
+                            <label>Description</label>
                             <InputText @bind-Value="_editingProject.Description" class="input" />
-                        }
-                        else
-                        {
-                            <span class="muted">@p.Description</span>
-                        }
-                    </td>
-                    <td>
-                        @if (_editingProject?.Id == p.Id)
-                        {
+                        </div>
+                        <div class="form-row">
+                            <label>Folder path</label>
                             <InputText @bind-Value="_editingProject.FolderPath" class="input" />
-                        }
-                        else
-                        {
-                            <code>@p.FolderPath</code>
-                        }
-                    </td>
-                    <td>@p.Tasks.Count</td>
-                    <td>
-                        @if (_editingProject?.Id == p.Id)
-                        {
-                            <input type="checkbox" @bind="_editingProject.IsActive" />
-                        }
-                        else
-                        {
-                            <span class="badge">@(p.IsActive ? "Active" : "Inactive")</span>
-                        }
-                    </td>
-                    <td>
-                        @if (_editingProject?.Id == p.Id)
-                        {
-                            <button class="btn" @onclick="SaveEditAsync">Save</button>
-                            <button class="btn" @onclick="() => _editingProject = null">Cancel</button>
-                        }
-                        else
-                        {
-                            <button class="btn small" @onclick="() => _editingProject = p">Edit</button>
-                            <button class="btn small" @onclick="() => DeleteProjectAsync(p.Id)">Delete</button>
-                        }
-                    </td>
-                </tr>
+                        </div>
+                        <div class="form-row">
+                            <label>
+                                <input type="checkbox" @bind="_editingProject.IsActive" /> Active
+                            </label>
+                        </div>
+                    }
+                    else
+                    {
+                        <h3>@p.Name</h3>
+                        <span class="muted">@if (!string.IsNullOrEmpty(p.Description)) { @p.Description } else { <span>No description</span> }</span>
+                        <span class="muted">@if (!string.IsNullOrEmpty(p.FolderPath)) { <code>@p.FolderPath</code> } else { <span>No folder</span> }</span>
+                    }
+                </div>
+                <div class="row gap">
+                    <button class="btn small" @onclick="() => ViewTasks(projectId)">View</button>
+                    <button class="btn small" @onclick="() => ToggleTasks(projectId)">
+                        @(isExpanded ? "Hide Tasks" : "Show Tasks") (@p.Tasks.Count)
+                    </button>
+                    @if (_editingProject?.Id == p.Id)
+                    {
+                        <button class="btn" @onclick="SaveEditAsync">Save</button>
+                        <button class="btn" @onclick="() => _editingProject = null">Cancel</button>
+                    }
+                    else
+                    {
+                        <button class="btn small" @onclick="() => _editingProject = p">Edit</button>
+                        <button class="btn small" @onclick="() => DeleteProjectAsync(p.Id)">Delete</button>
+                    }
+                </div>
+            </div>
+
+            @if (isExpanded)
+            {
+                <div class="section">
+                    <div class="row gap">
+                        <button class="btn small primary" @onclick="() => ShowAddTask(projectId)">+ Add Task</button>
+                    </div>
+
+                    @if (_addingTaskProjectId == projectId)
+                    {
+                        <div class="card">
+                            <h4>New Task</h4>
+                            <EditForm Model="_newTask" OnValidSubmit="CreateTaskAsync">
+                                <div class="form-row">
+                                    <label>Name</label>
+                                    <InputText @bind-Value="_newTask.Name" class="input" />
+                                </div>
+                                <div class="form-row">
+                                    <label>Prompt</label>
+                                    <InputTextArea @bind-Value="_newTask.Prompt" class="input" rows="3" />
+                                </div>
+                                <div class="form-row">
+                                    <label>System prompt</label>
+                                    <InputText @bind-Value="_newTask.SystemPrompt" class="input" />
+                                </div>
+                                <div class="form-row">
+                                    <label>Max turns</label>
+                                    <InputNumber @bind-Value="_newTask.MaxTurns" class="input" />
+                                </div>
+                                <button type="submit" class="btn primary">Create</button>
+                                <button type="button" class="btn" @onclick="() => _addingTaskProjectId = null">Cancel</button>
+                            </EditForm>
+                        </div>
+                    }
+
+                    @if (p.Tasks.Count == 0)
+                    {
+                        <p class="muted">No tasks yet.</p>
+                    }
+                    else
+                    {
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Prompt</th>
+                                    <th>Max Turns</th>
+                                    <th>Runs</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var t in p.Tasks)
+                                {
+                                    <tr>
+                                        <td>
+                                            @if (_editingTask?.Id == t.Id)
+                                            {
+                                                <InputText @bind-Value="_editingTask.Name" class="input" />
+                                            }
+                                            else
+                                            {
+                                                <strong>@t.Name</strong>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (_editingTask?.Id == t.Id)
+                                            {
+                                                <InputTextArea @bind-Value="_editingTask.Prompt" class="input" rows="2" />
+                                            }
+                                            else
+                                            {
+                                                <span class="muted">@t.Prompt</span>
+                                            }
+                                        </td>
+                                        <td>@t.MaxTurns</td>
+                                        <td>@t.Runs.Count</td>
+                                        <td>
+                                            @if (_editingTask?.Id == t.Id)
+                                            {
+                                                <button class="btn small" @onclick="SaveTaskEditAsync">Save</button>
+                                                <button class="btn small" @onclick="() => _editingTask = null">Cancel</button>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn small" @onclick="() => _editingTask = t">Edit</button>
+                                                <button class="btn small" @onclick="() => DeleteTaskAsync(t.Id)">Delete</button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
             }
-        </tbody>
-    </table>
+        </div>
+    }
 }
 
 @code {
@@ -123,12 +201,17 @@ else
     private Project? _editingProject;
     private bool _showCreate;
 
+    private HashSet<int> _expandedProjects = new();
+    private int? _addingTaskProjectId;
+    private AgentTask _newTask = new();
+    private AgentTask? _editingTask;
+
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        _projects = await db.Projects.Include(p => p.Tasks).ToListAsync();
+        _projects = await db.Projects.Include(p => p.Tasks).ThenInclude(t => t.Runs).ToListAsync();
     }
 
     private async Task CreateProjectAsync()
@@ -163,6 +246,61 @@ else
         await using var db = await DbFactory.CreateDbContextAsync();
         var p = await db.Projects.FindAsync(id);
         if (p is not null) { db.Projects.Remove(p); await db.SaveChangesAsync(); }
+        await LoadAsync();
+    }
+
+    private void ViewTasks(int projectId)
+    {
+        Nav.NavigateTo($"/tasks?projectId={projectId}");
+    }
+
+    private void ToggleTasks(int projectId)
+    {
+        if (_expandedProjects.Contains(projectId))
+            _expandedProjects.Remove(projectId);
+        else
+            _expandedProjects.Add(projectId);
+    }
+
+    private void ShowAddTask(int projectId)
+    {
+        _addingTaskProjectId = projectId;
+        _newTask = new() { ProjectId = projectId, MaxTurns = 10 };
+    }
+
+    private async Task CreateTaskAsync()
+    {
+        if (_addingTaskProjectId is null) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.AgentTasks.Add(_newTask);
+        await db.SaveChangesAsync();
+        _newTask = new();
+        _addingTaskProjectId = null;
+        await LoadAsync();
+    }
+
+    private async Task SaveTaskEditAsync()
+    {
+        if (_editingTask is null) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var t = await db.AgentTasks.FindAsync(_editingTask.Id);
+        if (t is not null)
+        {
+            t.Name = _editingTask.Name;
+            t.Prompt = _editingTask.Prompt;
+            t.SystemPrompt = _editingTask.SystemPrompt;
+            t.MaxTurns = _editingTask.MaxTurns;
+            await db.SaveChangesAsync();
+        }
+        _editingTask = null;
+        await LoadAsync();
+    }
+
+    private async Task DeleteTaskAsync(int id)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var t = await db.AgentTasks.FindAsync(id);
+        if (t is not null) { db.AgentTasks.Remove(t); await db.SaveChangesAsync(); }
         await LoadAsync();
     }
 }

@@ -26,7 +26,7 @@ public class AgentTask
     public int? ModelId { get; set; }
     public Model? Model { get; set; }
 
-    public int? ProjectId { get; set; }
+    public int ProjectId { get; set; }
     public Project? Project { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

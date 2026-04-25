@@ -130,6 +130,10 @@ BaseUrl = "http://localhost:4200",
         db.Providers.AddRange(claude, opencode);
         await db.SaveChangesAsync();
 
+        var defaultProject = new Project { Name = "Demo Project", FolderPath = "", IsActive = true };
+        db.Projects.Add(defaultProject);
+        await db.SaveChangesAsync();
+
         var defaultModel = db.Models.First(m => m.ProviderModelId == "claude-sonnet-4-6");
 
         db.AgentTasks.AddRange(
@@ -140,7 +144,8 @@ BaseUrl = "http://localhost:4200",
                 SystemPrompt = "You are a diligent note-keeper. Be concise.",
                 AllowedTools = "Read,Write,Grep,Glob",
                 MaxTurns = 8,
-                ModelId = defaultModel.Id
+                ModelId = defaultModel.Id,
+                ProjectId = defaultProject.Id
             },
             new AgentTask
             {
@@ -148,7 +153,8 @@ BaseUrl = "http://localhost:4200",
                 Prompt = "Find markdown notes in the vault that have no YAML frontmatter 'tags' field. For each one, read the content and add 3 relevant tags via frontmatter. Report how many notes you updated.",
                 AllowedTools = "Read,Edit,Grep,Glob",
                 MaxTurns = 15,
-                ModelId = defaultModel.Id
+                ModelId = defaultModel.Id,
+                ProjectId = defaultProject.Id
             }
         );
         await db.SaveChangesAsync();

@@ -1,5 +1,7 @@
 @page "/tasks"
 @rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MissionControl.Models
 @inject IDbContextFactory<MissionControlDb> DbFactory
 @inject AgentRunner Runner
 @inject NavigationManager Nav
@@ -8,7 +10,14 @@
 
 <h1>Tasks</h1>
 
-<div class="row gap">
+<div class="row gap" style="margin-bottom: 1rem">
+    <select class="input" @bind="_filterProjectId" @bind:after="OnFilterChanged">
+        <option value="0">All projects</option>
+        @foreach (var p in _projects)
+        {
+            <option value="@p.Id">@p.Name</option>
+        }
+    </select>
     <button class="btn primary" @onclick="() => { _showCreate = !_showCreate; _editing = null; }">
         @(_showCreate ? "Cancel" : "+ New task")
     </button>
@@ -83,17 +92,29 @@ else
 @code {
     private List<AgentTask> _tasks = new();
     private List<Model> _models = new();
+    private List<Project> _projects = new();
+    [SupplyParameterFromQuery] private int ProjectId { get; set; }
+    private int _filterProjectId;
     private bool _showCreate;
     private AgentTask _new = Blank();
     private AgentTask? _editing;
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _filterProjectId = ProjectId;
+        await LoadAsync();
+    }
+
+    private async Task OnFilterChanged() => await LoadAsync();
 
     private async Task LoadAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
+        _projects = await db.Projects.Where(p => p.IsActive).OrderBy(p => p.Name).ToListAsync();
         _tasks = await db.AgentTasks
             .Include(t => t.Model).ThenInclude(m => m!.Provider)
+            .Include(t => t.Project)
+            .Where(t => _filterProjectId == 0 || t.ProjectId == _filterProjectId)
             .OrderBy(t => t.Id)
             .ToListAsync();
         _models = await db.Models
@@ -145,6 +166,7 @@ else
             var model = await ctx.Models.Include(m => m.Provider).FirstOrDefaultAsync(m => m.Id == _new.ModelId);
             _new.ModelId = model?.Id ?? 0;
         }
+        _new.ProjectId = _filterProjectId > 0 ? _filterProjectId : _projects.FirstOrDefault()?.Id ?? 0;
         await using var db = await DbFactory.CreateDbContextAsync();
         db.AgentTasks.Add(_new);
         await db.SaveChangesAsync();
