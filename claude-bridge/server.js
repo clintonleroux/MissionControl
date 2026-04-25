@@ -50,6 +50,7 @@ app.post('/run', async (req, res) => {
     allowedTools,
     maxTurns = 10,
     apiKey,
+    apiEndpoint,
   } = req.body || {};
 
   if (!prompt || typeof prompt !== 'string') {
@@ -66,10 +67,12 @@ app.post('/run', async (req, res) => {
   const startedAt = Date.now();
   runs.set(runId, { status: 'running', startedAt, events: [] });
 
-  console.log(`[run ${runId}] start: ${taskName} (model: ${model})`);
+  console.log(`[run ${runId}] start: ${taskName} (model: ${model}${apiEndpoint ? `, url: ${apiEndpoint}` : ''})`);
 
   const previousKey = process.env.ANTHROPIC_API_KEY;
+  const previousUrl = process.env.ANTHROPIC_BASE_URL;
   process.env.ANTHROPIC_API_KEY = apiKey;
+  if (apiEndpoint) process.env.ANTHROPIC_BASE_URL = apiEndpoint;
 
   const options = {
     model,
@@ -140,6 +143,8 @@ app.post('/run', async (req, res) => {
   } finally {
     if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
     else process.env.ANTHROPIC_API_KEY = previousKey;
+    if (previousUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = previousUrl;
   }
 });
 

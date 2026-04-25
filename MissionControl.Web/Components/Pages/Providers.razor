@@ -2,7 +2,10 @@
 @rendermode InteractiveServer
 @using Microsoft.EntityFrameworkCore
 @using MissionControl.Models
+@using MissionControl.Services
 @inject IDbContextFactory<MissionControlDb> DbFactory
+@inject IProviderBridgeRegistry BridgeRegistry
+@inject ObsidianVaultService Vault
 @inject NavigationManager Nav
 
 <PageTitle>Providers · Mission Control</PageTitle>
@@ -40,6 +43,10 @@
                 <InputText @bind-Value="_newProvider.ApiKey" class="input" type="password" />
             </div>
             <div class="form-row">
+                <label>API Endpoint (optional)</label>
+                <InputText @bind-Value="_newProvider.ApiEndpoint" class="input" placeholder="https://api.openai.com" />
+            </div>
+            <div class="form-row">
                 <label>Monthly Credit Limit ($)</label>
                 <InputNumber @bind-Value="_newProvider.MonthlyCreditLimit" class="input short" placeholder="500" />
             </div>
@@ -69,10 +76,14 @@ else
                     <label>Base URL</label>
                     <InputText @bind-Value="_editingProvider.BaseUrl" class="input" />
                 </div>
-                <div class="form-row">
-                    <label>API Key</label>
-                    <InputText @bind-Value="_editingProvider.ApiKey" class="input" type="password" />
-                </div>
+<div class="form-row">
+                <label>API Key</label>
+                <InputText @bind-Value="_editingProvider.ApiKey" class="input" type="password" />
+            </div>
+            <div class="form-row">
+                <label>API Endpoint (optional)</label>
+                <InputText @bind-Value="_editingProvider.ApiEndpoint" class="input" placeholder="https://api.openai.com" />
+            </div>
                 <div class="form-row">
                     <label>Monthly Credit Limit ($)</label>
                     <InputNumber @bind-Value="_editingProvider.MonthlyCreditLimit" class="input short" />
@@ -94,7 +105,7 @@ else
                 <span class="badge">@p.Type</span>
                 <span class="badge @GetOnline(p.Id)">@GetOnlineText(p.Id)</span>
             </div>
-            <p class="muted">@p.BaseUrl</p>
+            <p class="muted">@p.BaseUrl@(string.IsNullOrWhiteSpace(p.ApiEndpoint) ? "" : $" → {p.ApiEndpoint}")</p>
             
             @if (p.MonthlyCreditLimit > 0)
             {
@@ -111,6 +122,9 @@ else
             
             <button class="btn" @onclick="() => EditProvider(p)">Edit</button>
             <button class="btn danger" @onclick="() => DeleteProviderAsync(p.Id)">Delete</button>
+            <button class="btn @GetOnline(p.Id)" @onclick="() => CheckOnlineAsync(p)">
+                @(_checkingOnline == p.Id ? "Checking…" : GetOnlineText(p.Id))
+            </button>
         }
         
         <table class="table">
@@ -161,9 +175,38 @@ else
                             <td>
                                 <button class="btn" @onclick="() => EditModel(m)">Edit</button>
                                 <button class="btn danger" @onclick="() => DeleteModelAsync(m.Id)">Delete</button>
+                                <button class="btn" @onclick="() => TestModelAsync(p, m)">
+                                    @(_testingModelId == m.Id ? "Testing…" : "Test")
+                                </button>
                             </td>
                         }
                     </tr>
+                    @if (_testResultModelId == m.Id)
+                    {
+                        <tr>
+                            <td colspan="5">
+                                <div class="card test-result">
+                                    <strong>Test @m.Name on @p.Name</strong>
+                                    <div class="test-section">
+                                        <h5>Request sent to bridge</h5>
+                                        <pre class="code">@_testRequest</pre>
+                                    </div>
+                                    <div class="test-section">
+                                        <h5>Response</h5>
+                                        @if (!string.IsNullOrWhiteSpace(_testError))
+                                        {
+                                            <pre class="code error">@_testError</pre>
+                                        }
+                                        else
+                                        {
+                                            <pre class="code">@_testResult</pre>
+                                        }
+                                    </div>
+                                    <button class="btn" @onclick="() => _testResultModelId = null">Dismiss</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
                 }
             </tbody>
         </table>
@@ -206,13 +249,19 @@ else
 @code {
     private List<Provider> _providers = new();
     private Dictionary<int, bool> _online = new();
+    private int? _checkingOnline;
     private bool _showCreate;
-    private Provider _newProvider = new() { Type = ProviderType.Claude, BaseUrl = "http://localhost:4200", MonthlyCreditLimit = 500 };
+    private Provider _newProvider = new() { Type = ProviderType.Opencode, BaseUrl = "http://localhost:4100", MonthlyCreditLimit = 500 };
     private Provider? _editingProvider;
     private bool _showAddModel;
     private Provider? _addModelProvider;
     private Model _newModel = new();
     private Model? _editingModel;
+    private int? _testingModelId;
+    private int? _testResultModelId;
+    private string _testRequest = "";
+    private string _testResult = "";
+    private string _testError = "";
 
     private string GetOnline(int id) => _online.TryGetValue(id, out var online) && online ? "ok" : "bad";
     private string GetOnlineText(int id) => _online.TryGetValue(id, out var online) && online ? "online" : "offline";
@@ -227,7 +276,75 @@ else
         _online = new();
         foreach (var p in _providers)
         {
-            _online[p.Id] = false;
+            _online[p.Id] = await CheckBridgeAsync(p);
+        }
+    }
+
+    private async Task<bool> CheckBridgeAsync(Provider p)
+    {
+        try
+        {
+            var bridge = BridgeRegistry.GetBridge(p);
+            return bridge is not null && await bridge.PingAsync();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task CheckOnlineAsync(Provider p)
+    {
+        _checkingOnline = p.Id;
+        var ok = await CheckBridgeAsync(p);
+        _online[p.Id] = ok;
+        _checkingOnline = null;
+    }
+
+    private async Task TestModelAsync(Provider p, Model m)
+    {
+        _testingModelId = m.Id;
+        _testResultModelId = null;
+        _testRequest = "";
+        _testResult = "";
+        _testError = "";
+
+        try
+        {
+            var bridge = BridgeRegistry.GetBridge(p);
+            if (bridge is null)
+            {
+                _testError = "No bridge registered for this provider.";
+                _testResultModelId = m.Id;
+                return;
+            }
+
+            var req = new BridgeRunRequest(
+                TaskName: "Test connection",
+                Prompt: "Say hello and confirm you are working correctly.",
+                SystemPrompt: null,
+                Model: m.ProviderModelId,
+                Cwd: Vault.VaultRoot,
+                AllowedTools: null,
+                MaxTurns: 1,
+                ApiKey: p.ApiKey,
+                ApiEndpoint: p.ApiEndpoint
+            );
+
+            _testRequest = System.Text.Json.JsonSerializer.Serialize(req, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+            var result = await bridge.RunAsync(req);
+            _testResult = result.Result ?? result.Error ?? "(empty response)";
+            _testResultModelId = m.Id;
+        }
+        catch (Exception ex)
+        {
+            _testError = ex.Message;
+            _testResultModelId = m.Id;
+        }
+        finally
+        {
+            _testingModelId = null;
         }
     }
 
@@ -240,6 +357,7 @@ else
             Type = p.Type,
             BaseUrl = p.BaseUrl,
             ApiKey = p.ApiKey,
+            ApiEndpoint = p.ApiEndpoint,
             MonthlyCreditLimit = p.MonthlyCreditLimit,
             IsEnabled = p.IsEnabled
         };
@@ -256,6 +374,7 @@ else
             p.Name = _editingProvider.Name;
             p.BaseUrl = _editingProvider.BaseUrl;
             p.ApiKey = _editingProvider.ApiKey;
+            p.ApiEndpoint = _editingProvider.ApiEndpoint;
             p.MonthlyCreditLimit = _editingProvider.MonthlyCreditLimit;
             p.IsEnabled = _editingProvider.IsEnabled;
             await db.SaveChangesAsync();
@@ -302,7 +421,7 @@ else
         await using var db = await DbFactory.CreateDbContextAsync();
         db.Providers.Add(_newProvider);
         await db.SaveChangesAsync();
-        _newProvider = new() { Type = ProviderType.Claude, BaseUrl = "http://localhost:4200", MonthlyCreditLimit = 500 };
+        _newProvider = new() { Type = ProviderType.Opencode, BaseUrl = "http://localhost:4100", MonthlyCreditLimit = 500 };
         _showCreate = false;
         await LoadAsync();
     }

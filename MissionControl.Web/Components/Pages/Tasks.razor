@@ -9,7 +9,7 @@
 <h1>Tasks</h1>
 
 <div class="row gap">
-    <button class="btn primary" @onclick="() => _showCreate = !_showCreate">
+    <button class="btn primary" @onclick="() => { _showCreate = !_showCreate; _editing = null; }">
         @(_showCreate ? "Cancel" : "+ New task")
     </button>
 </div>
@@ -19,36 +19,7 @@
     <div class="card">
         <h3>New task</h3>
         <EditForm Model="_new" OnValidSubmit="CreateAsync">
-            <div class="form-row">
-                <label>Name</label>
-                <InputText @bind-Value="_new.Name" class="input" />
-            </div>
-            <div class="form-row">
-                <label>Prompt</label>
-                <InputTextArea @bind-Value="_new.Prompt" class="input" rows="4" />
-            </div>
-            <div class="form-row">
-                <label>System prompt (optional)</label>
-                <InputTextArea @bind-Value="_new.SystemPrompt" class="input" rows="2" />
-            </div>
-            <div class="form-row">
-                <label>Model</label>
-                <InputSelect @bind-Value="_new.ModelId" class="input">
-                    <option value="">Use provider default</option>
-                    @foreach (var m in _models)
-                    {
-                        <option value="@m.Id">@(m.Provider?.Name ?? "?") / @m.Name</option>
-                    }
-                </InputSelect>
-            </div>
-            <div class="form-row">
-                <label>Allowed tools (comma-separated)</label>
-                <InputText @bind-Value="_new.AllowedTools" class="input" placeholder="Read,Write,Grep,Glob,Edit" />
-            </div>
-            <div class="form-row">
-                <label>Max turns</label>
-                <InputNumber @bind-Value="_new.MaxTurns" class="input short" />
-            </div>
+            <TaskFields _model="_new" _models="_models" />
             <button type="submit" class="btn primary">Create</button>
         </EditForm>
     </div>
@@ -75,18 +46,35 @@ else
         <tbody>
             @foreach (var t in _tasks)
             {
-                <tr>
-                    <td>@t.Id</td>
-                    <td><strong>@t.Name</strong></td>
-                    <td>@(t.Model?.Provider?.Name ?? "?")/@(t.Model?.Name ?? "—")</td>
-                    <td class="truncate">@t.Prompt</td>
-                    <td>@(t.AllowedTools ?? "—")</td>
-                    <td>@t.MaxTurns</td>
-                    <td class="row gap-sm">
-                        <button class="btn" @onclick="() => RunAsync(t.Id)">Run</button>
-                        <button class="btn danger" @onclick="() => DeleteAsync(t.Id)">Delete</button>
-                    </td>
-                </tr>
+                @if (_editing?.Id == t.Id)
+                {
+                    <tr>
+                        <td colspan="7">
+                            <EditForm Model="_editing" OnValidSubmit="() => SaveAsync()">
+                                <h4>Edit task #@t.Id</h4>
+                                <TaskFields _model="_editing" _models="_models" />
+                                <button type="submit" class="btn primary">Save</button>
+                                <button type="button" class="btn" @onclick="() => _editing = null">Cancel</button>
+                            </EditForm>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    <tr>
+                        <td>@t.Id</td>
+                        <td><strong>@t.Name</strong></td>
+                        <td>@(t.Model?.Provider?.Name ?? "?")/@(t.Model?.Name ?? "—")</td>
+                        <td class="truncate">@t.Prompt</td>
+                        <td>@(t.AllowedTools ?? "—")</td>
+                        <td>@t.MaxTurns</td>
+                        <td class="row gap-sm">
+                            <button class="btn" @onclick="() => RunAsync(t.Id)">Run</button>
+                            <button class="btn" @onclick="() => EditTask(t)">Edit</button>
+                            <button class="btn danger" @onclick="() => DeleteAsync(t.Id)">Delete</button>
+                        </td>
+                    </tr>
+                }
             }
         </tbody>
     </table>
@@ -97,6 +85,7 @@ else
     private List<Model> _models = new();
     private bool _showCreate;
     private AgentTask _new = Blank();
+    private AgentTask? _editing;
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -114,25 +103,47 @@ else
             .ToListAsync();
     }
 
+    private void EditTask(AgentTask t)
+    {
+        _showCreate = false;
+        _editing = new AgentTask
+        {
+            Id = t.Id,
+            Name = t.Name,
+            Prompt = t.Prompt,
+            SystemPrompt = t.SystemPrompt,
+            ModelId = t.ModelId,
+            AllowedTools = t.AllowedTools,
+            MaxTurns = t.MaxTurns
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_editing is null) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var t = await db.AgentTasks.FindAsync(_editing.Id);
+        if (t is not null)
+        {
+            t.Name = _editing.Name;
+            t.Prompt = _editing.Prompt;
+            t.SystemPrompt = _editing.SystemPrompt;
+            t.ModelId = _editing.ModelId > 0 ? _editing.ModelId : 0;
+            t.AllowedTools = _editing.AllowedTools;
+            t.MaxTurns = _editing.MaxTurns;
+            await db.SaveChangesAsync();
+        }
+        _editing = null;
+        await LoadAsync();
+    }
+
     private async Task CreateAsync()
     {
-        Model? model = null;
         if (_new.ModelId > 0)
         {
             await using var ctx = await DbFactory.CreateDbContextAsync();
-            model = await ctx.Models.Include(m => m.Provider).FirstOrDefaultAsync(m => m.Id == _new.ModelId);
-            if (model is not null)
-            {
-                _new.ModelId = model.Id;
-            }
-            else
-            {
-                _new.ModelId = 0;
-            }
-        }
-        else
-        {
-            _new.ModelId = 0;
+            var model = await ctx.Models.Include(m => m.Provider).FirstOrDefaultAsync(m => m.Id == _new.ModelId);
+            _new.ModelId = model?.Id ?? 0;
         }
         await using var db = await DbFactory.CreateDbContextAsync();
         db.AgentTasks.Add(_new);

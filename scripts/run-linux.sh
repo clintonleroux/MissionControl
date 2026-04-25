@@ -1,46 +1,27 @@
 #!/usr/bin/env bash
 # Mission Control launcher for Linux / macOS / WSL / Git Bash.
-# Usage:  ./scripts/run-linux.sh
-#   - Starts opencode serve on port 4096
-#   - Starts zen-bridge on port 4100
-#   - Starts Blazor web app
-#   - Ctrl-C stops all cleanly
-# Requires: .NET 8 SDK, Bun (https://bun.sh).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ZEN_BRIDGE="$ROOT/zen-bridge"
+CLAUDE_BRIDGE="$ROOT/claude-bridge"
 WEB_DIR="$ROOT/MissionControl.Web"
 
-require() {
-  command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' not on PATH. $2" >&2; exit 1; }
-}
-require bun    "Install Bun from https://bun.sh"
-require dotnet "Install the .NET 8 SDK (https://dotnet.microsoft.com/download)"
+require() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' not on PATH. $2" >&2; exit 1; }; }
+require dotnet "Install .NET 8 SDK" && require node "Install Node.js 20+"
 
-echo "==> Starting opencode serve on port 4096..."
-(bun x opencode-ai serve --port 4096) &
-OPENCODE_PID=$!
-echo "    opencode PID=$OPENCODE_PID"
+flush_port() { local pid=$(lsof -ti ":$1" 2>/dev/null || true); [ -n "$pid" ] && kill -9 $pid 2>/dev/null || true; }
+for p in 4100 4200 5000; do flush_port "$p"; done; sleep 1
 
-sleep 2
-
-echo "==> Starting zen-bridge on port 4100..."
-(cd "$ZEN_BRIDGE" && node server.js) &
-ZEN_PID=$!
-echo "    zen-bridge PID=$ZEN_PID"
-
-cleanup() {
-  echo ""
-  echo "==> Shutting down services..."
-  kill "$OPENCODE_PID" "$ZEN_PID" 2>/dev/null || true
-  wait 2>/dev/null || true
-}
+cleanup() { echo ""; echo "==> Shutting down..."; kill "$ZEN_PID" "$CLAUDE_PID" 2>/dev/null || true; wait 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
-sleep 1
+echo "==> Starting zen-bridge (opencode.ai) on port 4100..."
+(cd "$ZEN_BRIDGE" && node server.js) & ZEN_PID=$!; sleep 1
+
+echo "==> Starting claude-bridge on port 4200..."
+(cd "$CLAUDE_BRIDGE" && node server.js) & CLAUDE_PID=$!; sleep 1
 
 echo "==> Starting MissionControl.Web on http://localhost:5000"
-cd "$WEB_DIR"
-dotnet run --no-launch-profile --urls "http://0.0.0.0:5000"
+cd "$WEB_DIR" && dotnet run --no-launch-profile --urls "http://0.0.0.0:5000"

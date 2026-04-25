@@ -108,7 +108,8 @@ public class AgentRunner
                 Cwd: _vault.VaultRoot,
                 AllowedTools: allowedTools,
                 MaxTurns: task.MaxTurns,
-                ApiKey: provider.ApiKey
+                ApiKey: provider.ApiKey,
+                ApiEndpoint: provider.ApiEndpoint
             );
 
             var result = await bridge.RunAsync(req);
