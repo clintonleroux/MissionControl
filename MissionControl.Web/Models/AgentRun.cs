@@ -9,6 +9,10 @@ public class AgentRun
     public int AgentTaskId { get; set; }
     public AgentTask? AgentTask { get; set; }
 
+    /// <summary>Set from AgentTask.ProjectId when run is created.</summary>
+    public int? ProjectId { get; set; }
+    public Project? Project { get; set; }
+
     public AgentRunStatus Status { get; set; } = AgentRunStatus.Queued;
 
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;

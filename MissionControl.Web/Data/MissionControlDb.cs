@@ -9,6 +9,7 @@ public class MissionControlDb : DbContext
 
     public DbSet<Provider> Providers => Set<Provider>();
     public DbSet<Model> Models => Set<Model>();
+    public DbSet<Project> Projects => Set<Project>();
     public DbSet<AgentTask> AgentTasks => Set<AgentTask>();
     public DbSet<AgentRun> AgentRuns => Set<AgentRun>();
 
@@ -26,11 +27,23 @@ public class MissionControlDb : DbContext
             .HasForeignKey(t => t.ModelId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        b.Entity<Project>()
+            .HasMany(p => p.Tasks)
+            .WithOne(t => t.Project)
+            .HasForeignKey(t => t.ProjectId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         b.Entity<AgentTask>()
             .HasMany(t => t.Runs)
             .WithOne(r => r.AgentTask)
             .HasForeignKey(r => r.AgentTaskId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        b.Entity<AgentRun>()
+            .HasOne(r => r.Project)
+            .WithMany()
+            .HasForeignKey(r => r.ProjectId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         b.Entity<AgentRun>()
             .Property(r => r.Status)

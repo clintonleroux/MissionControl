@@ -23,8 +23,11 @@ public class AgentTask
     public int MaxTurns { get; set; } = 10;
 
     /// <summary>Optional model to use. If null, provider's default is used.</summary>
-    public int ModelId { get; set; }
+    public int? ModelId { get; set; }
     public Model? Model { get; set; }
+
+    public int? ProjectId { get; set; }
+    public Project? Project { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

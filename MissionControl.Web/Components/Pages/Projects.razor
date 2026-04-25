@@ -1,0 +1,168 @@
+@page "/projects"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MissionControl.Models
+@inject IDbContextFactory<MissionControlDb> DbFactory
+@inject NavigationManager Nav
+
+<PageTitle>Projects · Mission Control</PageTitle>
+
+<h1>Projects</h1>
+
+<div class="row gap">
+    <button class="btn primary" @onclick="() => _showCreate = !_showCreate">
+        @(_showCreate ? "Cancel" : "+ New project")
+    </button>
+</div>
+
+@if (_showCreate)
+{
+    <div class="card">
+        <h3>New project</h3>
+        <EditForm Model="_newProject" OnValidSubmit="CreateProjectAsync">
+            <div class="form-row">
+                <label>Name</label>
+                <InputText @bind-Value="_newProject.Name" class="input" />
+            </div>
+            <div class="form-row">
+                <label>Description</label>
+                <InputText @bind-Value="_newProject.Description" class="input" />
+            </div>
+            <div class="form-row">
+                <label>Folder path</label>
+                <InputText @bind-Value="_newProject.FolderPath" class="input" placeholder="C:\Projects\MyProject" />
+            </div>
+            <button type="submit" class="btn primary">Create</button>
+        </EditForm>
+    </div>
+}
+
+@if (_projects.Count == 0)
+{
+    <p class="muted">No projects yet. Create one to get started.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Folder</th>
+                <th>Tasks</th>
+                <th>Active</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in _projects)
+            {
+                <tr>
+                    <td>
+                        @if (_editingProject?.Id == p.Id)
+                        {
+                            <InputText @bind-Value="_editingProject.Name" class="input" />
+                        }
+                        else
+                        {
+                            <strong>@p.Name</strong>
+                        }
+                    </td>
+                    <td>
+                        @if (_editingProject?.Id == p.Id)
+                        {
+                            <InputText @bind-Value="_editingProject.Description" class="input" />
+                        }
+                        else
+                        {
+                            <span class="muted">@p.Description</span>
+                        }
+                    </td>
+                    <td>
+                        @if (_editingProject?.Id == p.Id)
+                        {
+                            <InputText @bind-Value="_editingProject.FolderPath" class="input" />
+                        }
+                        else
+                        {
+                            <code>@p.FolderPath</code>
+                        }
+                    </td>
+                    <td>@p.Tasks.Count</td>
+                    <td>
+                        @if (_editingProject?.Id == p.Id)
+                        {
+                            <input type="checkbox" @bind="_editingProject.IsActive" />
+                        }
+                        else
+                        {
+                            <span class="badge">@(p.IsActive ? "Active" : "Inactive")</span>
+                        }
+                    </td>
+                    <td>
+                        @if (_editingProject?.Id == p.Id)
+                        {
+                            <button class="btn" @onclick="SaveEditAsync">Save</button>
+                            <button class="btn" @onclick="() => _editingProject = null">Cancel</button>
+                        }
+                        else
+                        {
+                            <button class="btn small" @onclick="() => _editingProject = p">Edit</button>
+                            <button class="btn small" @onclick="() => DeleteProjectAsync(p.Id)">Delete</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Project> _projects = new();
+    private Project _newProject = new();
+    private Project? _editingProject;
+    private bool _showCreate;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _projects = await db.Projects.Include(p => p.Tasks).ToListAsync();
+    }
+
+    private async Task CreateProjectAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Projects.Add(_newProject);
+        await db.SaveChangesAsync();
+        _newProject = new();
+        _showCreate = false;
+        await LoadAsync();
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_editingProject is null) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var p = await db.Projects.FindAsync(_editingProject.Id);
+        if (p is not null)
+        {
+            p.Name = _editingProject.Name;
+            p.Description = _editingProject.Description;
+            p.FolderPath = _editingProject.FolderPath;
+            p.IsActive = _editingProject.IsActive;
+            await db.SaveChangesAsync();
+        }
+        _editingProject = null;
+        await LoadAsync();
+    }
+
+    private async Task DeleteProjectAsync(int id)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var p = await db.Projects.FindAsync(id);
+        if (p is not null) { db.Projects.Remove(p); await db.SaveChangesAsync(); }
+        await LoadAsync();
+    }
+}
