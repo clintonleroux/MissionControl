@@ -163,6 +163,12 @@ await using var db = await _dbFactory.CreateDbContextAsync();
                 run.CompletedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
             }
+            var task = await db.AgentTasks.FindAsync(run.AgentTaskId);
+            if (task is not null)
+            {
+                task.Status = MissionControl.Models.Enums.TaskStatus.Failed;
+                await db.SaveChangesAsync();
+            }
         }
     }
 }

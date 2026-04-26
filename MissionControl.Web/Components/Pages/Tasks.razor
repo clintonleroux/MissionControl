@@ -90,13 +90,13 @@ else
                         <td>@(t.AllowedTools ?? "—")</td>
                         <td>@t.MaxTurns</td>
                         <td class="row gap-sm">
-                            @if (t.Status != MissionControl.Models.Enums.TaskStatus.Completed && t.Status != MissionControl.Models.Enums.TaskStatus.Running)
+                            @if (t.Status != MissionControl.Models.Enums.TaskStatus.Running)
                             {
                                 <button class="btn" @onclick="() => RunAsync(t.Id)">Run</button>
                             }
-                            else if (t.Status == MissionControl.Models.Enums.TaskStatus.Running)
+                            else
                             {
-                                <span class="badge">Running...</span>
+                                <button class="btn" @onclick="() => ResetAsync(t.Id)">Reset</button>
                             }
                             <button class="btn" @onclick="() => ViewTask(t.Id)">View</button>
                             <button class="btn" @onclick="() => EditTask(t)">Edit</button>
@@ -209,6 +209,18 @@ else
     {
         var runId = await Runner.StartAsync(taskId);
         Nav.NavigateTo($"runs/{runId}");
+    }
+
+    private async Task ResetAsync(int taskId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var t = await db.AgentTasks.FindAsync(taskId);
+        if (t is not null)
+        {
+            t.Status = MissionControl.Models.Enums.TaskStatus.Pending;
+            await db.SaveChangesAsync();
+        }
+        await LoadAsync();
     }
 
     private async Task ViewTask(int taskId)
