@@ -15,4 +15,6 @@ public class Project
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<AgentTask> Tasks { get; set; } = new();
+
+    public List<ProjectAgent> ProjectAgents { get; set; } = new();
 }

@@ -52,6 +52,7 @@ else
         <thead>
             <tr>
                 <th>#</th>
+                <th>Stage</th>
                 <th>Name</th>
                 <th>Status</th>
                 <th>Model</th>
@@ -67,7 +68,7 @@ else
                 @if (_editing?.Id == t.Id)
                 {
                     <tr>
-                        <td colspan="8">
+                        <td colspan="10">
                             <EditForm Model="_editing" OnValidSubmit="() => SaveAsync()">
                                 <h4>Edit task #@t.Id</h4>
                                 <TaskFields _model="_editing" _models="_models" />
@@ -81,6 +82,7 @@ else
                 {
                     <tr>
                         <td>@t.Id</td>
+                        <td><span class="badge">@t.Stage</span></td>
                         <td><strong>@t.Name</strong></td>
                         <td><span class="badge">@t.Status</span></td>
                         <td>@(t.Model?.Provider?.Name ?? "?")/@(t.Model?.Name ?? "—")</td>
@@ -158,10 +160,11 @@ else
             Id = t.Id,
             Name = t.Name,
             Prompt = t.Prompt,
-            SystemPrompt = t.SystemPrompt,
+            Stage = t.Stage,
             ModelId = t.ModelId,
             AllowedTools = t.AllowedTools,
-            MaxTurns = t.MaxTurns
+            MaxTurns = t.MaxTurns,
+            Priority = t.Priority
         };
     }
 
@@ -174,10 +177,11 @@ else
         {
             t.Name = _editing.Name;
             t.Prompt = _editing.Prompt;
-            t.SystemPrompt = _editing.SystemPrompt;
-            t.ModelId = _editing.ModelId > 0 ? _editing.ModelId : 0;
+            t.Stage = _editing.Stage;
+            t.ModelId = _editing.ModelId;
             t.AllowedTools = _editing.AllowedTools;
             t.MaxTurns = _editing.MaxTurns;
+            t.Priority = _editing.Priority;
             await db.SaveChangesAsync();
         }
         _editing = null;

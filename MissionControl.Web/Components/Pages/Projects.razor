@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using Microsoft.EntityFrameworkCore
 @using MissionControl.Models
+@using MissionControl.Models.Enums
 @inject IDbContextFactory<MissionControlDb> DbFactory
 @inject NavigationManager Nav
 
@@ -46,7 +47,8 @@ else
     @foreach (var p in _projects)
     {
         var projectId = p.Id;
-        var isExpanded = _expandedProjects.Contains(projectId);
+        var isExpandedTasks = _expandedTasks.Contains(projectId);
+        var isExpandedAgents = _expandedAgents.Contains(projectId);
 
         <div class="card">
             <div class="row-between">
@@ -80,8 +82,11 @@ else
                 </div>
                 <div class="row gap">
                     <button class="btn small" @onclick="() => ViewTasks(projectId)">View</button>
+                    <button class="btn small" @onclick="() => ToggleAgents(projectId)">
+                        @(isExpandedAgents ? "Hide Agents" : "Assign Agents")
+                    </button>
                     <button class="btn small" @onclick="() => ToggleTasks(projectId)">
-                        @(isExpanded ? "Hide Tasks" : "Show Tasks") (@p.Tasks.Count)
+                        @(isExpandedTasks ? "Hide Tasks" : "Show Tasks") (@p.Tasks.Count)
                     </button>
                     @if (_editingProject?.Id == p.Id)
                     {
@@ -96,7 +101,7 @@ else
                 </div>
             </div>
 
-            @if (isExpanded)
+            @if (isExpandedTasks)
             {
                 <div class="section">
                     <div class="row gap">
@@ -115,10 +120,6 @@ else
                                 <div class="form-row">
                                     <label>Prompt</label>
                                     <InputTextArea @bind-Value="_newTask.Prompt" class="input" rows="3" />
-                                </div>
-                                <div class="form-row">
-                                    <label>System prompt</label>
-                                    <InputText @bind-Value="_newTask.SystemPrompt" class="input" />
                                 </div>
                                 <div class="form-row">
                                     <label>Max turns</label>
@@ -191,17 +192,56 @@ else
                     }
                 </div>
             }
+
+            @if (isExpandedAgents)
+            {
+                <div class="section">
+                    <h4>Agent Assignments for @p.Name</h4>
+                    <p class="muted">Assign agents (or yourself) to handle each task stage for this project.</p>
+                    
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Task Stage</th>
+                                <th>Assigned To</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var stage in _taskStages)
+                            {
+                                var currentAssignment = p.ProjectAgents.FirstOrDefault(pa => pa.Stage == stage);
+                                <tr>
+                                    <td>@stage</td>
+                                    <td>
+                                        <select class="input" @onchange="(e) => SaveAssignmentAsync(p.Id, stage, e)">
+                                            <option value="">Unassigned</option>
+                                            <option value="-1" selected="@(currentAssignment?.AgentId == -1)">Myself (Manual)</option>
+                                            @foreach (var a in _agents)
+                                            {
+                                                <option value="@a.Id" selected="@(currentAssignment?.AgentId == a.Id)">@a.Name</option>
+                                            }
+                                        </select>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
         </div>
     }
 }
 
 @code {
     private List<Project> _projects = new();
+    private List<Agent> _agents = new();
+    private readonly TaskStage[] _taskStages = Enum.GetValues<TaskStage>();
     private Project _newProject = new();
     private Project? _editingProject;
     private bool _showCreate;
 
-    private HashSet<int> _expandedProjects = new();
+    private HashSet<int> _expandedTasks = new();
+    private HashSet<int> _expandedAgents = new();
     private int? _addingTaskProjectId;
     private AgentTask _newTask = new();
     private AgentTask? _editingTask;
@@ -211,7 +251,47 @@ else
     private async Task LoadAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        _projects = await db.Projects.Include(p => p.Tasks).ThenInclude(t => t.Runs).ToListAsync();
+        _projects = await db.Projects.Include(p => p.Tasks).ThenInclude(t => t.Runs)
+            .Include(p => p.ProjectAgents).ThenInclude(pa => pa.Agent)
+            .ToListAsync();
+        _agents = await db.Agents.Where(a => a.IsActive).ToListAsync();
+    }
+
+    private async Task SaveAssignmentAsync(int projectId, TaskStage stage, ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        var agentIdStr = string.IsNullOrEmpty(value) ? null : value;
+        
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var existing = await db.ProjectAgents.FirstOrDefaultAsync(pa => pa.ProjectId == projectId && pa.Stage == stage);
+        
+        if (string.IsNullOrEmpty(agentIdStr))
+        {
+            if (existing is not null)
+            {
+                db.ProjectAgents.Remove(existing);
+                await db.SaveChangesAsync();
+            }
+        }
+        else
+        {
+            var agentId = int.Parse(agentIdStr);
+            if (existing is not null)
+            {
+                existing.AgentId = agentId;
+            }
+            else
+            {
+                db.ProjectAgents.Add(new ProjectAgent
+                {
+                    ProjectId = projectId,
+                    Stage = stage,
+                    AgentId = agentId
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+        await LoadAsync();
     }
 
     private async Task CreateProjectAsync()
@@ -254,12 +334,20 @@ else
         Nav.NavigateTo($"/tasks?projectId={projectId}");
     }
 
+    private void ToggleAgents(int projectId)
+    {
+        if (_expandedAgents.Contains(projectId))
+            _expandedAgents.Remove(projectId);
+        else
+            _expandedAgents.Add(projectId);
+    }
+
     private void ToggleTasks(int projectId)
     {
-        if (_expandedProjects.Contains(projectId))
-            _expandedProjects.Remove(projectId);
+        if (_expandedTasks.Contains(projectId))
+            _expandedTasks.Remove(projectId);
         else
-            _expandedProjects.Add(projectId);
+            _expandedTasks.Add(projectId);
     }
 
     private void ShowAddTask(int projectId)
@@ -288,7 +376,6 @@ else
         {
             t.Name = _editingTask.Name;
             t.Prompt = _editingTask.Prompt;
-            t.SystemPrompt = _editingTask.SystemPrompt;
             t.MaxTurns = _editingTask.MaxTurns;
             await db.SaveChangesAsync();
         }

@@ -43,7 +43,7 @@ Start-Sleep -Seconds 1
 try {
     Write-Host "==> Starting MissionControl.Web on http://localhost:5000" -ForegroundColor Cyan
     Push-Location $webDir
-    try   { & dotnet run --no-launch-profile --urls "http://localhost:5000" }
+    try   { & dotnet run -c Release --no-launch-profile --urls "http://localhost:5000" }
     finally { Pop-Location }
 }
 finally {

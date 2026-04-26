@@ -1,21 +1,27 @@
 @using MissionControl.Models
+@using MissionControl.Models.Enums
 
 <div class="form-row">
     <label>Name</label>
     <InputText @bind-Value="_model.Name" class="input" />
 </div>
 <div class="form-row">
+    <label>Stage</label>
+    <InputSelect @bind-Value="_model.Stage" class="input">
+        @foreach (TaskStage stage in Enum.GetValues<TaskStage>())
+        {
+            <option value="@stage">@stage</option>
+        }
+    </InputSelect>
+</div>
+<div class="form-row">
     <label>Prompt</label>
     <InputTextArea @bind-Value="_model.Prompt" class="input" rows="4" />
 </div>
 <div class="form-row">
-    <label>System prompt (optional)</label>
-    <InputTextArea @bind-Value="_model.SystemPrompt" class="input" rows="2" />
-</div>
-<div class="form-row">
-    <label>Model</label>
+    <label>Model (optional)</label>
     <InputSelect @bind-Value="_model.ModelId" class="input">
-        <option value="">Use provider default</option>
+        <option value="">Default</option>
         @foreach (var m in _models)
         {
             <option value="@m.Id">@(m.Provider?.Name ?? "?") / @m.Name</option>

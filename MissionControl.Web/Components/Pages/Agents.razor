@@ -1,0 +1,164 @@
+@page "/agents"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MissionControl.Models
+@inject IDbContextFactory<MissionControlDb> DbFactory
+@inject NavigationManager Nav
+
+<PageTitle>Agents · Mission Control</PageTitle>
+
+<h1>Agents</h1>
+
+<div class="row gap">
+    <button class="btn primary" @onclick="() => _showCreate = !_showCreate">
+        @(_showCreate ? "Cancel" : "+ New agent")
+    </button>
+</div>
+
+@if (_showCreate || _editingAgent is not null)
+{
+    var editing = _editingAgent;
+    var agentToEdit = editing ?? _newAgent;
+    <div class="card">
+        <h3>@(editing is null ? "New agent" : "Edit agent")</h3>
+        <EditForm Model="agentToEdit" OnValidSubmit="SubmitFormAsync">
+            <div class="form-row">
+                <label>Name</label>
+                <InputText @bind-Value="agentToEdit.Name" class="input" />
+            </div>
+            <div class="form-row">
+                <label>System prompt</label>
+                <InputTextArea @bind-Value="agentToEdit.SystemPrompt" class="input" rows="4" />
+            </div>
+            <div class="form-row">
+                <label>Model</label>
+                <InputSelect @bind-Value="agentToEdit.ModelId" class="input">
+                    <option value="0">Select a model</option>
+                    @foreach (var m in _models)
+                    {
+                        <option value="@m.Id">@m.Provider?.Name / @m.Name</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="form-row">
+                <label>
+                    <input type="checkbox" @bind="agentToEdit.IsActive" /> Active
+                </label>
+            </div>
+            <button type="submit" class="btn primary">@(editing is null ? "Create" : "Save")</button>
+            <button type="button" class="btn" @onclick="() => CancelEdit()">Cancel</button>
+        </EditForm>
+    </div>
+}
+
+@if (_agents.Count == 0)
+{
+    <p class="muted">No agents yet. Create one to get started.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Model</th>
+                <th>System prompt</th>
+                <th>Active</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var a in _agents)
+            {
+                <tr>
+                    <td><strong>@a.Name</strong></td>
+                    <td>@a.Model?.Provider?.Name / @a.Model?.Name</td>
+                    <td class="truncate">@a.SystemPrompt</td>
+                    <td><span class="badge">@(a.IsActive ? "Active" : "Inactive")</span></td>
+                    <td class="row gap-sm">
+                        <button class="btn small" @onclick="() => StartEdit(a)">Edit</button>
+                        <button class="btn danger" @onclick="() => DeleteAgentAsync(a.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Agent> _agents = new();
+    private List<Model> _models = new();
+    private Agent _newAgent = new();
+    private Agent? _editingAgent;
+    private bool _showCreate;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _agents = await db.Agents.Include(a => a.Model).ThenInclude(m => m!.Provider).ToListAsync();
+        _models = await db.Models.Include(m => m.Provider).Where(m => m.IsEnabled).ToListAsync();
+    }
+
+    private async Task CreateAgentAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Agents.Add(_newAgent);
+        await db.SaveChangesAsync();
+        _newAgent = new();
+        _showCreate = false;
+        await LoadAsync();
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_editingAgent is null) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var a = await db.Agents.FindAsync(_editingAgent.Id);
+        if (a is not null)
+        {
+            a.Name = _editingAgent.Name;
+            a.SystemPrompt = _editingAgent.SystemPrompt;
+            a.ModelId = _editingAgent.ModelId;
+            a.IsActive = _editingAgent.IsActive;
+            await db.SaveChangesAsync();
+        }
+        _editingAgent = null;
+        await LoadAsync();
+    }
+
+    private void CancelEdit()
+    {
+        _showCreate = false;
+        _editingAgent = null;
+    }
+
+    private async Task SubmitFormAsync()
+    {
+        if (_editingAgent is not null)
+            await SaveEditAsync();
+        else
+            await CreateAgentAsync();
+    }
+
+    private async Task DeleteAgentAsync(int id)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var a = await db.Agents.FindAsync(id);
+        if (a is not null) { db.Agents.Remove(a); await db.SaveChangesAsync(); }
+        await LoadAsync();
+    }
+
+    private void StartEdit(Agent a)
+    {
+        _editingAgent = new Agent
+        {
+            Id = a.Id,
+            Name = a.Name,
+            SystemPrompt = a.SystemPrompt,
+            ModelId = a.ModelId,
+            IsActive = a.IsActive
+        };
+    }
+}

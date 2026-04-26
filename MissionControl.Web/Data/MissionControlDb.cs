@@ -10,6 +10,8 @@ public class MissionControlDb : DbContext
     public DbSet<Provider> Providers => Set<Provider>();
     public DbSet<Model> Models => Set<Model>();
     public DbSet<Project> Projects => Set<Project>();
+    public DbSet<Agent> Agents => Set<Agent>();
+    public DbSet<ProjectAgent> ProjectAgents => Set<ProjectAgent>();
     public DbSet<AgentTask> AgentTasks => Set<AgentTask>();
     public DbSet<AgentRun> AgentRuns => Set<AgentRun>();
 
@@ -51,6 +53,14 @@ public class MissionControlDb : DbContext
 
         b.Entity<AgentTask>()
             .Property(t => t.Status)
+            .HasConversion<string>();
+
+        b.Entity<AgentTask>()
+            .Property(t => t.Stage)
+            .HasConversion<string>();
+
+        b.Entity<ProjectAgent>()
+            .Property(pa => pa.Stage)
             .HasConversion<string>();
     }
 
@@ -145,7 +155,6 @@ BaseUrl = "http://localhost:4200",
             {
                 Name = "Summarize today's notes",
                 Prompt = "Read every markdown note in the vault whose filename contains today's date (YYYY-MM-DD). Produce a 5-bullet summary. Write it to _MissionControl/daily-summary.md.",
-                SystemPrompt = "You are a diligent note-keeper. Be concise.",
                 AllowedTools = "Read,Write,Grep,Glob",
                 MaxTurns = 8,
                 ModelId = defaultModel.Id,

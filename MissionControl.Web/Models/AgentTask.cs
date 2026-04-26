@@ -15,9 +15,6 @@ public class AgentTask
     /// <summary>Instruction given to the agent on each run.</summary>
     public string Prompt { get; set; } = "";
 
-    /// <summary>Optional system prompt override.</summary>
-    public string? SystemPrompt { get; set; }
-
     /// <summary>Comma-separated tool allowlist (e.g. "Read,Write,Grep"). Null = default allowlist.</summary>
     public string? AllowedTools { get; set; }
 
@@ -25,6 +22,8 @@ public class AgentTask
     public int MaxTurns { get; set; } = 10;
 
     public MissionControl.Models.Enums.TaskStatus Status { get; set; } = MissionControl.Models.Enums.TaskStatus.Pending;
+
+    public MissionControl.Models.Enums.TaskStage Stage { get; set; } = MissionControl.Models.Enums.TaskStage.Backlog;
 
     public int Priority { get; set; } = 0;
 

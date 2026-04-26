@@ -55,47 +55,49 @@ public class AgentRunner
 
     private async Task ExecuteAsync(int runId)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync();
-        var run = await db.AgentRuns
-            .Include(r => r.AgentTask)
-            .ThenInclude(t => t!.Model!)
-            .ThenInclude(m => m!.Provider)
-            .FirstOrDefaultAsync(r => r.Id == runId);
-
-        if (run is null)
-        {
-            _log.LogError("Run {RunId} not found.", runId);
-            return;
-        }
-
-        var task = run.AgentTask;
-        if (task is null || task.Model is null || task.Model.Provider is null)
-        {
-            _log.LogError("Run {RunId} has no model/provider assigned.", runId);
-            run.Status = AgentRunStatus.Failed;
-            run.ErrorMessage = "No model assigned to task.";
-            await db.SaveChangesAsync();
-            return;
-        }
-
-        var model = task.Model;
-        var provider = model.Provider;
-
-        run.Status = AgentRunStatus.Running;
-        run.StartedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-
         try
         {
-            if (string.IsNullOrWhiteSpace(provider.ApiKey))
+await using var db = await _dbFactory.CreateDbContextAsync();
+            var run = await db.AgentRuns
+                .Include(r => r.AgentTask)
+                .ThenInclude(t => t!.Model!)
+                .ThenInclude(m => m!.Provider)
+                .FirstOrDefaultAsync(r => r.Id == runId);
+
+            if (run is null)
             {
-                throw new InvalidOperationException(
-                    $"API key not set for provider '{provider.Name}'. Please configure it in Settings.");
+                _log.LogError("Run {RunId} not found.", runId);
+                return;
             }
 
-            var allowedTools = string.IsNullOrWhiteSpace(task.AllowedTools)
-                ? null
-                : task.AllowedTools.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var task = run.AgentTask;
+            if (task is null)
+            {
+                _log.LogError("Run {RunId} has no task.", runId);
+                return;
+            }
+
+            var model = task.Model;
+
+            if (model is null)
+            {
+                _log.LogError("Run {RunId} has no model assigned.", runId);
+                run.Status = AgentRunStatus.Failed;
+                run.ErrorMessage = "No model assigned to task.";
+                await db.SaveChangesAsync();
+                return;
+            }
+
+            var provider = model.Provider;
+
+            if (provider is null)
+            {
+                _log.LogError("Run {RunId} has no provider.", runId);
+                run.Status = AgentRunStatus.Failed;
+                run.ErrorMessage = "No provider for model.";
+                await db.SaveChangesAsync();
+                return;
+            }
 
             var bridge = _bridgeRegistry.GetBridge(provider);
             if (bridge is null)
@@ -107,10 +109,11 @@ public class AgentRunner
                 return;
             }
 
+            var allowedTools = task.AllowedTools?.Split(',').Select(t => t.Trim()).ToArray();
             var req = new BridgeRunRequest(
                 TaskName: task.Name,
                 Prompt: task.Prompt,
-                SystemPrompt: task.SystemPrompt,
+                SystemPrompt: "",
                 Model: model.ProviderModelId,
                 Cwd: _vault.VaultRoot,
                 AllowedTools: allowedTools,
@@ -150,15 +153,16 @@ public class AgentRunner
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Run {RunId} threw.", run.Id);
-            run.Status = AgentRunStatus.Failed;
-            run.ErrorMessage = ex.Message;
-            run.CompletedAt = DateTime.UtcNow;
-            try { run.VaultNotePath = await _vault.WriteRunNoteAsync(task, run); } catch { }
-            await db.SaveChangesAsync();
-
-            task.Status = MissionControl.Models.Enums.TaskStatus.Failed;
-            await db.SaveChangesAsync();
+            _log.LogError(ex, "Run {RunId} threw.", runId);
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var run = await db.AgentRuns.FindAsync(runId);
+            if (run is not null)
+            {
+                run.Status = AgentRunStatus.Failed;
+                run.ErrorMessage = ex.Message;
+                run.CompletedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+            }
         }
     }
 }
